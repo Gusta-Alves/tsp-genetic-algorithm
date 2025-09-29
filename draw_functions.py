@@ -11,6 +11,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib
 import pygame
 from typing import List, Tuple
+import numpy as np
 
 matplotlib.use("Agg")
 
@@ -35,10 +36,10 @@ def draw_plot(screen: pygame.Surface, x: list, y: list, x_label: str = 'Generati
     canvas = FigureCanvasAgg(fig)
     canvas.draw()
     renderer = canvas.get_renderer()
-    raw_data = renderer.tostring_rgb()
+    raw_data = renderer.buffer_rgba()
 
     size = canvas.get_width_height()
-    surf = pygame.image.fromstring(raw_data, size, "RGB")
+    surf = pygame.image.frombuffer(raw_data, size, "RGBA")
     screen.blit(surf, (0, 0))
     
 def draw_cities(screen: pygame.Surface, cities_locations: List[Tuple[int, int]], rgb_color: Tuple[int, int, int], node_radius: int) -> None:
@@ -72,7 +73,7 @@ def draw_paths(screen: pygame.Surface, path: List[Tuple[int, int]], rgb_color: T
     pygame.draw.lines(screen, rgb_color, True, path, width=width)
 
 
-def draw_text(screen: pygame.Surface, text: str, color: pygame.Color) -> None:
+def draw_text(screen: pygame.Surface, text: str, color: pygame.Color, cities_locations: List[Tuple[int, int]] = None, height: int = 400) -> None:
     """
     Draw text on a Pygame screen.
 
@@ -80,6 +81,8 @@ def draw_text(screen: pygame.Surface, text: str, color: pygame.Color) -> None:
     - screen (pygame.Surface): The Pygame surface to draw the text on.
     - text (str): The text to be displayed.
     - color (pygame.Color): The color of the text.
+    - cities_locations: List of city positions to calculate text position
+    - height: Screen height for positioning
     """
     pygame.font.init()  # You have to call this at the start
 
@@ -87,8 +90,10 @@ def draw_text(screen: pygame.Surface, text: str, color: pygame.Color) -> None:
     my_font = pygame.font.SysFont('Arial', font_size)
     text_surface = my_font.render(text, False, color)
     
-    cities_locations = []  # Assuming you have this list defined somewhere
-    text_position = (np.average(np.array(cities_locations)[:, 0]), HEIGHT - 1.5 * font_size)
+    if cities_locations:
+        text_position = (np.average(np.array(cities_locations)[:, 0]), height - 1.5 * font_size)
+    else:
+        text_position = (10, height - 1.5 * font_size)
     
     screen.blit(text_surface, text_position)
 

@@ -2,7 +2,7 @@ import pygame
 from pygame.locals import *
 import random
 import itertools
-from genetic_algorithm import mutate, order_crossover, generate_random_population, calculate_fitness, sort_population, default_problems
+from genetic_algorithm import convex_hull_heuristic, mutate, nearest_neighbor_heuristic, order_crossover, generate_random_population, calculate_fitness, sort_population, default_problems, tournament_selection
 from draw_functions import draw_paths, draw_plot, draw_cities
 import sys
 import numpy as np
@@ -19,9 +19,10 @@ PLOT_X_OFFSET = 450
 
 # GA
 N_CITIES = 15
-POPULATION_SIZE = 100
+POPULATION_SIZE = 150
 N_GENERATIONS = None
-MUTATION_PROBABILITY = 0.5
+MUTATION_PROBABILITY = 0.7
+ELITE_SIZE = 10
 
 # Define colors
 WHITE = (255, 255, 255)
@@ -32,8 +33,8 @@ BLUE = (0, 0, 255)
 
 # Initialize problem
 # Using Random cities generation
-cities_locations = [(random.randint(NODE_RADIUS + PLOT_X_OFFSET, WIDTH - NODE_RADIUS), random.randint(NODE_RADIUS, HEIGHT - NODE_RADIUS))
-                    for _ in range(N_CITIES)]
+# cities_locations = [(random.randint(NODE_RADIUS + PLOT_X_OFFSET, WIDTH - NODE_RADIUS), random.randint(NODE_RADIUS, HEIGHT - NODE_RADIUS))
+#                     for _ in range(N_CITIES)]
 
 
 # # Using Deault Problems: 10, 12 or 15
@@ -42,17 +43,18 @@ cities_locations = [(random.randint(NODE_RADIUS + PLOT_X_OFFSET, WIDTH - NODE_RA
 
 
 # Using att48 benchmark
-# WIDTH, HEIGHT = 1500, 800
-# att_cities_locations = np.array(att_48_cities_locations)
-# max_x = max(point[0] for point in att_cities_locations)
-# max_y = max(point[1] for point in att_cities_locations)
-# scale_x = (WIDTH - PLOT_X_OFFSET - NODE_RADIUS) / max_x
-# scale_y = HEIGHT / max_y
-# cities_locations = [(int(point[0] * scale_x + PLOT_X_OFFSET),
-#                      int(point[1] * scale_y)) for point in att_cities_locations]
-# target_solution = [cities_locations[i-1] for i in att_48_cities_order]
-# fitness_target_solution = calculate_fitness(target_solution)
-# print(f"Best Solution: {fitness_target_solution}")
+WIDTH, HEIGHT = 1500, 800
+N_CITIES = 48
+att_cities_locations = np.array(att_48_cities_locations)
+max_x = max(point[0] for point in att_cities_locations)
+max_y = max(point[1] for point in att_cities_locations)
+scale_x = (WIDTH - PLOT_X_OFFSET - NODE_RADIUS) / max_x
+scale_y = HEIGHT / max_y
+cities_locations = [(int(point[0] * scale_x + PLOT_X_OFFSET),
+                     int(point[1] * scale_y)) for point in att_cities_locations]
+target_solution = [cities_locations[i-1] for i in att_48_cities_order]
+fitness_target_solution = calculate_fitness(target_solution)
+print(f"Best Solution: {fitness_target_solution}")
 # ----- Using att48 benchmark
 
 
@@ -65,8 +67,24 @@ generation_counter = itertools.count(start=1)  # Start the counter at 1
 
 
 # Create Initial Population
-# TODO:- use some heuristic like Nearest Neighbour our Convex Hull to initialize
-population = generate_random_population(cities_locations, POPULATION_SIZE)
+# Using heuristics like Nearest Neighbour and Convex Hull to initialize
+population = []
+
+# Add one convex hull solution
+# population.append(convex_hull_heuristic(cities_locations))
+
+# Add several nearest neighbor solutions starting from different cities
+# for _ in range(POPULATION_SIZE//4):
+#     population.append(nearest_neighbor_heuristic(cities_locations, random.randint(0, N_CITIES - 1)))
+
+for i in range(N_CITIES):
+    start_city_index = i % N_CITIES
+    print(f"Starting NN heuristic from city index: {start_city_index}")
+    population.append(nearest_neighbor_heuristic(cities_locations, start_city_index))
+
+# Fill the rest with random solutions
+population.extend(generate_random_population(cities_locations, POPULATION_SIZE - len(population)))
+
 best_fitness_values = []
 best_solutions = []
 
@@ -106,7 +124,7 @@ while running:
 
     print(f"Generation {generation}: Best fitness = {round(best_fitness, 2)}")
 
-    new_population = [population[0]]  # Keep the best individual: ELITISM
+    new_population = [*population[:ELITE_SIZE]]  # Keep the best 5 individuals: ELITE_SIZE
 
     while len(new_population) < POPULATION_SIZE:
 
@@ -115,15 +133,22 @@ while running:
         # parent1, parent2 = random.choices(population[:10], k=2)
 
         # solution based on fitness probability
-        probability = 1 / np.array(population_fitness)
-        parent1, parent2 = random.choices(population, weights=probability, k=2)
+        # probability = 1 / np.array(population_fitness)
+        # parent1, parent2 = random.choices(population, weights=probability, k=2)
+
+        # solution based on tournament selection
+        parent1 = tournament_selection(population, population_fitness, tournament_size=5)
+        parent2 = tournament_selection(population, population_fitness, tournament_size=5)
 
         # child1 = order_crossover(parent1, parent2)
-        child1 = order_crossover(parent1, parent1)
+        child1, child2 = order_crossover(parent1, parent2)
 
         child1 = mutate(child1, MUTATION_PROBABILITY)
-
+        child2 = mutate(child2, MUTATION_PROBABILITY)
+        
         new_population.append(child1)
+        if len(new_population) < POPULATION_SIZE:
+            new_population.append(child2)
 
     population = new_population
 
