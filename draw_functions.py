@@ -4,19 +4,25 @@ Created on Fri Dec 22 16:03:11 2023
 
 @author: SérgioPolimante
 """
-import pylab
-import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-import matplotlib
-import pygame
 from typing import List, Tuple
+
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
+import pygame
+import pylab
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 matplotlib.use("Agg")
 
 
-def draw_plot(screen: pygame.Surface, x: list, y: list, x_label: str = 'Generation', y_label: str = 'Fitness') -> None:
+def draw_plot(
+    screen: pygame.Surface,
+    x: list,
+    y: list,
+    x_label: str = "Generation",
+    y_label: str = "Fitness",
+) -> None:
     """
     Draw a plot on a Pygame screen using Matplotlib.
 
@@ -41,8 +47,14 @@ def draw_plot(screen: pygame.Surface, x: list, y: list, x_label: str = 'Generati
     size = canvas.get_width_height()
     surf = pygame.image.frombuffer(raw_data, size, "RGBA")
     screen.blit(surf, (0, 0))
-    
-def draw_cities(screen: pygame.Surface, cities_locations: List[Tuple[int, int]], rgb_color: Tuple[int, int, int], node_radius: int) -> None:
+
+
+def draw_cities(
+    screen: pygame.Surface,
+    cities_locations: List[Tuple[int, int]],
+    rgb_color: Tuple[int, int, int],
+    node_radius: int,
+) -> None:
     """
     Draws circles representing cities on the given Pygame screen.
 
@@ -59,8 +71,12 @@ def draw_cities(screen: pygame.Surface, cities_locations: List[Tuple[int, int]],
         pygame.draw.circle(screen, rgb_color, city_location, node_radius)
 
 
-
-def draw_paths(screen: pygame.Surface, path: List[Tuple[int, int]], rgb_color: Tuple[int, int, int], width: int = 1):
+def draw_paths(
+    screen: pygame.Surface,
+    path: List[Tuple[int, int]],
+    rgb_color: Tuple[int, int, int],
+    width: int = 1,
+):
     """
     Draw a path on a Pygame screen.
 
@@ -73,7 +89,13 @@ def draw_paths(screen: pygame.Surface, path: List[Tuple[int, int]], rgb_color: T
     pygame.draw.lines(screen, rgb_color, True, path, width=width)
 
 
-def draw_text(screen: pygame.Surface, text: str, color: pygame.Color, cities_locations: List[Tuple[int, int]] = None, height: int = 400) -> None:
+def draw_text(
+    screen: pygame.Surface,
+    text: str,
+    color: pygame.Color,
+    cities_locations: List[Tuple[int, int]] = None,
+    height: int = 400,
+) -> None:
     """
     Draw text on a Pygame screen.
 
@@ -87,13 +109,15 @@ def draw_text(screen: pygame.Surface, text: str, color: pygame.Color, cities_loc
     pygame.font.init()  # You have to call this at the start
 
     font_size = 15
-    my_font = pygame.font.SysFont('Arial', font_size)
+    my_font = pygame.font.SysFont("Arial", font_size)
     text_surface = my_font.render(text, False, color)
-    
+
     if cities_locations:
-        text_position = (np.average(np.array(cities_locations)[:, 0]), height - 1.5 * font_size)
+        text_position = (
+            np.average(np.array(cities_locations)[:, 0]),
+            height - 1.5 * font_size,
+        )
     else:
         text_position = (10, height - 1.5 * font_size)
-    
-    screen.blit(text_surface, text_position)
 
+    screen.blit(text_surface, text_position)

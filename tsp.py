@@ -1,14 +1,36 @@
-import pygame
-from pygame.locals import *
-import random
+"""
+1 - Implementar a representação genética adequada para rotas;
+2 - Desenvolver operadores genéticos especializdos (seleção, crossover, mutação) para o problema de roteamento;
+3 - Criar uma função fitness que considere distancia, prioridade de entregas e outras restrições relevantes.
+3.1 - Incluir restrições realistas como:
+    ○ Prioridades diferentes para entregas (medicamentos críticos vs. insumos regulares);
+    ○ Capacidade limitada de carga dos veículos;
+    ○ Autonomia limitada dos veículos (distância máxima que pode ser percorrida);
+    ○ Múltiplos veículos disponíveis (ampliando para o problema de roteamento de veículos - VRP);
+    ○ Outras restrições que achar interessante.
+"""
+
 import itertools
-from genetic_algorithm import convex_hull_heuristic, mutate, nearest_neighbor_heuristic, order_crossover, generate_random_population, calculate_fitness, sort_population, default_problems, tournament_selection
-from draw_functions import draw_paths, draw_plot, draw_cities
+import random
 import sys
+
 import numpy as np
 import pygame
-from benchmark_att48 import *
+from pygame.locals import *
 
+from benchmark_att48 import *
+from draw_functions import draw_cities, draw_paths, draw_plot
+from genetic_algorithm import (
+    calculate_fitness,
+    convex_hull_heuristic,
+    default_problems,
+    generate_random_population,
+    mutate,
+    nearest_neighbor_heuristic,
+    order_crossover,
+    sort_population,
+    tournament_selection,
+)
 
 # Define constant values
 # pygame
@@ -50,9 +72,11 @@ max_x = max(point[0] for point in att_cities_locations)
 max_y = max(point[1] for point in att_cities_locations)
 scale_x = (WIDTH - PLOT_X_OFFSET - NODE_RADIUS) / max_x
 scale_y = HEIGHT / max_y
-cities_locations = [(int(point[0] * scale_x + PLOT_X_OFFSET),
-                     int(point[1] * scale_y)) for point in att_cities_locations]
-target_solution = [cities_locations[i-1] for i in att_48_cities_order]
+cities_locations = [
+    (int(point[0] * scale_x + PLOT_X_OFFSET), int(point[1] * scale_y))
+    for point in att_cities_locations
+]
+target_solution = [cities_locations[i - 1] for i in att_48_cities_order]
 fitness_target_solution = calculate_fitness(target_solution)
 print(f"Best Solution: {fitness_target_solution}")
 # ----- Using att48 benchmark
@@ -83,7 +107,9 @@ for i in range(N_CITIES):
     population.append(nearest_neighbor_heuristic(cities_locations, start_city_index))
 
 # Fill the rest with random solutions
-population.extend(generate_random_population(cities_locations, POPULATION_SIZE - len(population)))
+population.extend(
+    generate_random_population(cities_locations, POPULATION_SIZE - len(population))
+)
 
 best_fitness_values = []
 best_solutions = []
@@ -103,11 +129,9 @@ while running:
 
     screen.fill(WHITE)
 
-    population_fitness = [calculate_fitness(
-        individual) for individual in population]
+    population_fitness = [calculate_fitness(individual) for individual in population]
 
-    population, population_fitness = sort_population(
-        population,  population_fitness)
+    population, population_fitness = sort_population(population, population_fitness)
 
     best_fitness = calculate_fitness(population[0])
     best_solution = population[0]
@@ -115,8 +139,12 @@ while running:
     best_fitness_values.append(best_fitness)
     best_solutions.append(best_solution)
 
-    draw_plot(screen, list(range(len(best_fitness_values))),
-              best_fitness_values, y_label="Fitness - Distance (pxls)")
+    draw_plot(
+        screen,
+        list(range(len(best_fitness_values))),
+        best_fitness_values,
+        y_label="Fitness - Distance (pxls)",
+    )
 
     draw_cities(screen, cities_locations, RED, NODE_RADIUS)
     draw_paths(screen, best_solution, BLUE, width=3)
@@ -124,7 +152,9 @@ while running:
 
     print(f"Generation {generation}: Best fitness = {round(best_fitness, 2)}")
 
-    new_population = [*population[:ELITE_SIZE]]  # Keep the best 5 individuals: ELITE_SIZE
+    new_population = [
+        *population[:ELITE_SIZE]
+    ]  # Keep the best 5 individuals: ELITE_SIZE
 
     while len(new_population) < POPULATION_SIZE:
 
@@ -137,15 +167,19 @@ while running:
         # parent1, parent2 = random.choices(population, weights=probability, k=2)
 
         # solution based on tournament selection
-        parent1 = tournament_selection(population, population_fitness, tournament_size=5)
-        parent2 = tournament_selection(population, population_fitness, tournament_size=5)
+        parent1 = tournament_selection(
+            population, population_fitness, tournament_size=5
+        )
+        parent2 = tournament_selection(
+            population, population_fitness, tournament_size=5
+        )
 
         # child1 = order_crossover(parent1, parent2)
         child1, child2 = order_crossover(parent1, parent2)
 
         child1 = mutate(child1, MUTATION_PROBABILITY)
         child2 = mutate(child2, MUTATION_PROBABILITY)
-        
+
         new_population.append(child1)
         if len(new_population) < POPULATION_SIZE:
             new_population.append(child2)
