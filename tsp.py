@@ -7,13 +7,11 @@ from draw_functions import draw_paths, draw_plot, draw_cities
 import sys
 import numpy as np
 import pygame
-from benchmark_att48 import *
-
 
 # Define constant values
 # pygame
 WIDTH, HEIGHT = 800, 400
-NODE_RADIUS = 10
+NODE_RADIUS = 5
 FPS = 30
 PLOT_X_OFFSET = 450
 
@@ -38,24 +36,8 @@ BLUE = (0, 0, 255)
 
 
 # # Using Deault Problems: 10, 12 or 15
-# WIDTH, HEIGHT = 800, 400
-# cities_locations = default_problems[15]
-
-
-# Using att48 benchmark
-WIDTH, HEIGHT = 1500, 800
-N_CITIES = 48
-att_cities_locations = np.array(att_48_cities_locations)
-max_x = max(point[0] for point in att_cities_locations)
-max_y = max(point[1] for point in att_cities_locations)
-scale_x = (WIDTH - PLOT_X_OFFSET - NODE_RADIUS) / max_x
-scale_y = HEIGHT / max_y
-cities_locations = [(int(point[0] * scale_x + PLOT_X_OFFSET),
-                     int(point[1] * scale_y)) for point in att_cities_locations]
-target_solution = [cities_locations[i-1] for i in att_48_cities_order]
-fitness_target_solution = calculate_fitness(target_solution)
-print(f"Best Solution: {fitness_target_solution}")
-# ----- Using att48 benchmark
+WIDTH, HEIGHT = 800, 400
+cities_locations = default_problems[N_CITIES]
 
 
 # Initialize Pygame
