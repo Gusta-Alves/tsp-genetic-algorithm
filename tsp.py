@@ -1,17 +1,14 @@
 """
-1 - Implementar a representação genética adequada para rotas;
-2 - Desenvolver operadores genéticos especializdos (seleção, crossover, mutação) para o problema de roteamento;
-3 - Criar uma função fitness que considere distancia, prioridade de entregas e outras restrições relevantes.
-3.1 - Incluir restrições realistas como:
-    ○ Prioridades diferentes para entregas (medicamentos críticos vs. insumos regulares);
-    ○ Capacidade limitada de carga dos veículos;
-    ○ Autonomia limitada dos veículos (distância máxima que pode ser percorrida);
-    ○ Múltiplos veículos disponíveis (ampliando para o problema de roteamento de veículos - VRP);
-    ○ Outras restrições que achar interessante.
+TSP Solver com múltiplos veículos usando GA
+- Depósito central
+- Clusteriza cidades em 4 grupos
+- Cada veículo percorre seu cluster
+- Rotas coloridas
+- Lado esquerdo da tela: gráfico moderno + tabela moderna
+- Lado direito da tela: mapa das cidades
 """
 
 import itertools
-import random
 import sys
 
 import numpy as np
@@ -19,11 +16,9 @@ import pygame
 from pygame.locals import *
 
 from benchmark_att48 import *
-from draw_functions import draw_cities, draw_paths, draw_plot
+from draw_functions import draw_cities, draw_paths
 from genetic_algorithm import (
-    calculate_fitness,
-    convex_hull_heuristic,
-    default_problems,
+    calculate_fitness,    
     generate_random_population,
     mutate,
     nearest_neighbor_heuristic,
@@ -32,166 +27,195 @@ from genetic_algorithm import (
     tournament_selection,
 )
 
-# Define constant values
-# pygame
-WIDTH, HEIGHT = 800, 400
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+# ------------------------- CONSTANTES -------------------------
+SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 650
 NODE_RADIUS = 10
 FPS = 30
-PLOT_X_OFFSET = 450
 
-# GA
-N_CITIES = 15
-POPULATION_SIZE = 150
-N_GENERATIONS = None
+POPULATION_SIZE = 100
 MUTATION_PROBABILITY = 0.7
 ELITE_SIZE = 10
 
-# Define colors
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-BLUE = (0, 0, 255)
+NUM_VEHICLES = 4
+VEHICLE_COLORS = [(255,0,0), (0,255,0), (0,0,255), (255,165,0)]
 
+MARGIN = 50
 
-# Initialize problem
-# Using Random cities generation
-# cities_locations = [(random.randint(NODE_RADIUS + PLOT_X_OFFSET, WIDTH - NODE_RADIUS), random.randint(NODE_RADIUS, HEIGHT - NODE_RADIUS))
-#                     for _ in range(N_CITIES)]
+# ------------------------- DIVISÃO DA TELA -------------------------
+LEFT_PANEL_WIDTH = 500
+RIGHT_PANEL_WIDTH = SCREEN_WIDTH - LEFT_PANEL_WIDTH 
+GRAPH_HEIGHT = 400
+TABLE_HEIGHT = 200
 
-
-# # Using Deault Problems: 10, 12 or 15
-# WIDTH, HEIGHT = 800, 400
-# cities_locations = default_problems[15]
-
-
-# Using att48 benchmark
-WIDTH, HEIGHT = 1500, 800
-N_CITIES = 48
+# ------------------------- PREPARAR CIDADES -------------------------
 att_cities_locations = np.array(att_48_cities_locations)
 max_x = max(point[0] for point in att_cities_locations)
 max_y = max(point[1] for point in att_cities_locations)
-scale_x = (WIDTH - PLOT_X_OFFSET - NODE_RADIUS) / max_x
-scale_y = HEIGHT / max_y
+
+scale_x = (RIGHT_PANEL_WIDTH - MARGIN*2 - NODE_RADIUS) / max_x
+scale_y = (SCREEN_HEIGHT - MARGIN*2 - NODE_RADIUS) / max_y
+
 cities_locations = [
-    (int(point[0] * scale_x + PLOT_X_OFFSET), int(point[1] * scale_y))
+    (int(point[0] * scale_x + LEFT_PANEL_WIDTH + MARGIN), int(point[1] * scale_y + MARGIN))
     for point in att_cities_locations
 ]
-target_solution = [cities_locations[i - 1] for i in att_48_cities_order]
-fitness_target_solution = calculate_fitness(target_solution)
-print(f"Best Solution: {fitness_target_solution}")
-# ----- Using att48 benchmark
 
+# ------------------------- DEPÓSITO CENTRAL -------------------------
+depot_x = int(np.mean([x for x, y in cities_locations]))
+depot_y = int(np.mean([y for x, y in cities_locations]))
+depot = (depot_x, depot_y)
 
-# Initialize Pygame
+# ------------------------- CLUSTERIZAR CIDADES -------------------------
+cities_array = np.array(cities_locations)
+kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=42)
+kmeans.fit(cities_array)
+labels = kmeans.labels_
+
+vehicle_clusters = [[] for _ in range(NUM_VEHICLES)]
+for idx, label in enumerate(labels):
+    vehicle_clusters[label].append(cities_locations[idx])
+
+# Adicionar depósito no início e fim de cada cluster
+for i in range(NUM_VEHICLES):
+    vehicle_clusters[i] = [depot] + vehicle_clusters[i] + [depot]
+
+# ------------------------- PYGAME -------------------------
 pygame.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("TSP Solver using Pygame")
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("TSP Solver com múltiplos veículos")
 clock = pygame.time.Clock()
-generation_counter = itertools.count(start=1)  # Start the counter at 1
+generation_counter = itertools.count(start=1)
 
+# ------------------------- POPULAÇÃO INICIAL -------------------------
+vehicle_populations = []
+for cluster in vehicle_clusters:
+    population = []
+    for i in range(1, len(cluster)-1):
+        population.append(nearest_neighbor_heuristic(cluster, i))
+    population.extend(generate_random_population(cluster, POPULATION_SIZE - len(population)))
+    vehicle_populations.append(population)
 
-# Create Initial Population
-# Using heuristics like Nearest Neighbour and Convex Hull to initialize
-population = []
+vehicle_best_fitness = [[] for _ in range(NUM_VEHICLES)]
+vehicle_best_solutions = [[] for _ in range(NUM_VEHICLES)]
+vehicle_last_change = [0]*NUM_VEHICLES
 
-# Add one convex hull solution
-# population.append(convex_hull_heuristic(cities_locations))
-
-# Add several nearest neighbor solutions starting from different cities
-# for _ in range(POPULATION_SIZE//4):
-#     population.append(nearest_neighbor_heuristic(cities_locations, random.randint(0, N_CITIES - 1)))
-
-for i in range(N_CITIES):
-    start_city_index = i % N_CITIES
-    print(f"Starting NN heuristic from city index: {start_city_index}")
-    population.append(nearest_neighbor_heuristic(cities_locations, start_city_index))
-
-# Fill the rest with random solutions
-population.extend(
-    generate_random_population(cities_locations, POPULATION_SIZE - len(population))
-)
-
-best_fitness_values = []
-best_solutions = []
-
-
-# Main game loop
+# ------------------------- LOOP PRINCIPAL -------------------------
 running = True
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_q:
-                running = False
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+            running = False
 
     generation = next(generation_counter)
+    screen.fill((255,255,255))
 
-    screen.fill(WHITE)
+    vehicle_info = []
 
-    population_fitness = [calculate_fitness(individual) for individual in population]
+    # ----------------- PARA CADA VEÍCULO -----------------
+    for v in range(NUM_VEHICLES):
+        population = vehicle_populations[v]
+        population_fitness = [calculate_fitness(ind) for ind in population]
+        population, population_fitness = sort_population(population, population_fitness)
 
-    population, population_fitness = sort_population(population, population_fitness)
+        best_fitness = calculate_fitness(population[0])
+        best_solution = population[0]
 
-    best_fitness = calculate_fitness(population[0])
-    best_solution = population[0]
+        if len(vehicle_best_solutions[v]) == 0 or vehicle_best_solutions[v][-1] != best_solution:
+            vehicle_last_change[v] = generation
 
-    best_fitness_values.append(best_fitness)
-    best_solutions.append(best_solution)
+        vehicle_best_fitness[v].append(best_fitness)
+        vehicle_best_solutions[v].append(best_solution)
+        num_cities = len(best_solution) - 2  # não contar depósito
+        vehicle_info.append((v, best_fitness, num_cities, vehicle_last_change[v]))
 
-    draw_plot(
-        screen,
-        list(range(len(best_fitness_values))),
-        best_fitness_values,
-        y_label="Fitness - Distance (pxls)",
-    )
+        # Desenhar rotas e cidades no painel da direita
+        draw_paths(screen, best_solution, VEHICLE_COLORS[v], width=3)        
+        draw_cities(screen, vehicle_clusters[v], VEHICLE_COLORS[v], NODE_RADIUS, depot)
 
-    draw_cities(screen, cities_locations, RED, NODE_RADIUS)
-    draw_paths(screen, best_solution, BLUE, width=3)
-    draw_paths(screen, population[1], rgb_color=(128, 128, 128), width=1)
+        # Evolução da população
+        new_population = [population[0]]
+        while len(new_population) < POPULATION_SIZE:
+            parent1 = tournament_selection(population, population_fitness, tournament_size=5)
+            parent2 = tournament_selection(population, population_fitness, tournament_size=5)
+            child1, child2 = order_crossover(parent1, parent2)
+            child1 = mutate(child1, MUTATION_PROBABILITY)
+            child2 = mutate(child2, MUTATION_PROBABILITY)
+            new_population.append(child1)
+            if len(new_population) < POPULATION_SIZE:
+                new_population.append(child2)
+        vehicle_populations[v] = new_population
 
-    print(f"Generation {generation}: Best fitness = {round(best_fitness, 2)}")
+    # ----------------- DESENHAR GRÁFICO -----------------
+    plt_fig, plt_ax = plt.subplots(figsize=(5,4), dpi=100)
+    plt_ax.set_facecolor('#f9f9f9')  # fundo suave
+    plt_ax.grid(True, linestyle='--', alpha=0.5)
 
-    new_population = [
-        *population[:ELITE_SIZE]
-    ]  # Keep the best 5 individuals: ELITE_SIZE
-
-    while len(new_population) < POPULATION_SIZE:
-
-        # selection
-        # simple selection based on first 10 best solutions
-        # parent1, parent2 = random.choices(population[:10], k=2)
-
-        # solution based on fitness probability
-        # probability = 1 / np.array(population_fitness)
-        # parent1, parent2 = random.choices(population, weights=probability, k=2)
-
-        # solution based on tournament selection
-        parent1 = tournament_selection(
-            population, population_fitness, tournament_size=5
+    for v in range(NUM_VEHICLES):
+        plt_ax.plot(
+            list(range(len(vehicle_best_fitness[v]))),
+            vehicle_best_fitness[v],
+            color=np.array(VEHICLE_COLORS[v])/255,
+            label=f'Veículo {v+1}',
+            linewidth=3
         )
-        parent2 = tournament_selection(
-            population, population_fitness, tournament_size=5
-        )
 
-        # child1 = order_crossover(parent1, parent2)
-        child1, child2 = order_crossover(parent1, parent2)
+    plt_ax.set_xlabel("Generation", fontsize=12)
+    plt_ax.set_ylabel("Fitness (Distance)", fontsize=12)
+    plt_ax.tick_params(axis='both', labelsize=10)
+    plt_ax.legend(frameon=False, fontsize=10)
+    plt.tight_layout(pad=2)
 
-        child1 = mutate(child1, MUTATION_PROBABILITY)
-        child2 = mutate(child2, MUTATION_PROBABILITY)
+    canvas = FigureCanvasAgg(plt_fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    raw_data = renderer.buffer_rgba()
+    size = canvas.get_width_height()
+    surf = pygame.image.frombuffer(raw_data, size, "RGBA")
+    screen.blit(surf, (10, 10)) 
+    plt.close(plt_fig)
 
-        new_population.append(child1)
-        if len(new_population) < POPULATION_SIZE:
-            new_population.append(child2)
+    # ----------------- DESENHAR TABELA -----------------
+    vehicle_info.sort(key=lambda x: x[1])
+    pygame.font.init()
+    font = pygame.font.SysFont("Arial", 20, bold=False)
+    start_x, start_y = 10, GRAPH_HEIGHT + 20
+    col_widths = [80, 120, 150, 150]
+    row_height = 35
 
-    population = new_population
+    headers = ["Veículo", "Distância", "Cidades visitadas", "Última mudança"]
+
+    # Cabeçalho
+    for col, header in enumerate(headers):
+        x = start_x + sum(col_widths[:col])
+        y = start_y
+        pygame.draw.rect(screen, (200,200,200), (x, y, col_widths[col], row_height))
+        pygame.draw.rect(screen, (0,0,0), (x, y, col_widths[col], row_height), 2)
+        text_surface = font.render(header, True, (0,0,0))
+        screen.blit(text_surface, (x + 5, y + 5))
+
+    start_y += row_height
+
+    # Linhas da tabela (zebra) e cores por veículo
+    for row, info in enumerate(vehicle_info):
+        v, dist, num_cities, last_change = info
+        values = [str(v+1), str(round(dist)), str(num_cities-1), str(last_change)]
+        for col, val in enumerate(values):
+            x = start_x + sum(col_widths[:col])
+            y = start_y + row*row_height
+            bg_color = (240, 240, 240) if row % 2 == 0 else (220, 220, 220)
+            pygame.draw.rect(screen, bg_color, (x, y, col_widths[col], row_height))
+            pygame.draw.rect(screen, (0,0,0), (x, y, col_widths[col], row_height), 2)
+            text_surface = font.render(val, True, (0,0,0))
+            screen.blit(text_surface, (x + 5, y + 5))
 
     pygame.display.flip()
     clock.tick(FPS)
 
-
-# TODO: save the best individual in a file if it is better than the one saved.
-
-# exit software
 pygame.quit()
 sys.exit()
