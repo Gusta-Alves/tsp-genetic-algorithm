@@ -3,20 +3,43 @@ import math
 import random
 from typing import List, Tuple
 
+# ------------------------- RESTRIÇÕES -------------------------
+# Edite estes pares com os índices das cidades do seu `att_48_cities_locations`
+# Ex: (0,3) impede ir da cidade índice 0 para 3 (e vice-versa).
+
+PROHIBITED_PENALTY = 1e6
+
 # ------------------------- FUNÇÕES BÁSICAS -------------------------
 
-def calculate_distance(point1: Tuple[float, float], point2: Tuple[float, float]) -> float:
-    """Calcula distância Euclidiana entre dois pontos."""
-    return math.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
+def calculate_distance(point1: Tuple[float, float], point2: Tuple[float, float], cities_location=None, vias_proibidas=None) -> float:
+    """
+    Distância Euclidiana entre dois pontos.
+    Se `cities_location` for passado, checa vias_proibidas usando os índices.
+    Retorna PROHIBITED_PENALTY quando a aresta for proibida.
+    """
+    if cities_location is not None:
+        try:
+            city_to_index = {coord: i for i, coord in enumerate(cities_location)}
+            idx1 = city_to_index.get(point1)
+            idx2 = city_to_index.get(point2)
 
-def calculate_fitness(path: List[Tuple[float, float]]) -> float:
-    """Calcula fitness como soma das distâncias da rota."""
-    distance = 0
+            if idx1 is not None and idx2 is not None:
+                if (point1, point2) in vias_proibidas or (point2, point1) in vias_proibidas:
+                    return PROHIBITED_PENALTY           
+        except ValueError:
+            # ponto não está na lista passada (fallback para distância normal)
+            pass
+    return math.hypot(point1[0] - point2[0], point1[1] - point2[1])
+
+def calculate_fitness(path: List[Tuple[float, float]], cities_location=None, vias_proibidas=None) -> float:
+    """Calcula fitness como soma das distâncias da rota; respeita vias proibidas se cities_location for dado."""
+    distance = 0.0
     n = len(path)
     for i in range(n):
-        distance += calculate_distance(path[i], path[(i + 1) % n])
+        a = path[i]
+        b = path[(i + 1) % n]
+        distance += calculate_distance(a, b, cities_location, vias_proibidas)
     return distance
-
 # ------------------------- POPULAÇÃO -------------------------
 
 def generate_random_population(
@@ -39,7 +62,7 @@ def generate_random_population(
 # ------------------------- HEURÍSTICAS -------------------------
 
 def nearest_neighbor_heuristic(
-    cities_locations: List[Tuple[float, float]], start_city_index: int = 1
+    cities_locations: List[Tuple[float, float]], start_city_index: int = 1, cities_compare: List[Tuple[float, float]] = None, vias_proibidas: List[Tuple[Tuple[float, float], Tuple[float, float]]] = None
 ) -> List[Tuple[float, float]]:
     """Heurística vizinho mais próximo, mantendo depósito fixo no início e fim."""
     depot = cities_locations[0]
@@ -50,7 +73,7 @@ def nearest_neighbor_heuristic(
 
     while unvisited:
         nearest_city = min(
-            unvisited, key=lambda city: calculate_distance(current_city, city)
+            unvisited, key=lambda city: calculate_distance(current_city, city, cities_compare, vias_proibidas)
         )
         route.append(nearest_city)
         unvisited.remove(nearest_city)

@@ -15,6 +15,12 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 matplotlib.use("Agg")
 
+def draw_button(screen, rect, text, color_bg, color_text=(255,255,255)):
+    pygame.draw.rect(screen, color_bg, rect)
+    font = pygame.font.SysFont("Arial", 20)
+    text_surface = font.render(text, True, color_text)
+    text_rect = text_surface.get_rect(center=(rect[0]+rect[2]//2, rect[1]+rect[3]//2))
+    screen.blit(text_surface, text_rect)
 
 def draw_plot(
     screen: pygame.Surface,
@@ -78,17 +84,33 @@ def draw_paths(
     path: List[Tuple[int, int]],
     rgb_color: Tuple[int, int, int],
     width: int = 1,
+    vias_proibidas: List[Tuple[int, int]] = None,
+    cities_locations: List[Tuple[int, int]] = None,
 ):
     """
-    Draw a path on a Pygame screen.
-
-    Parameters:
-    - screen (pygame.Surface): The Pygame surface to draw the path on.
-    - path (List[Tuple[int, int]]): List of tuples representing the coordinates of the path.
-    - rgb_color (Tuple[int, int, int]): RGB values for the color of the path.
-    - width (int): Width of the path lines (default is 1).
+    Desenha um caminho. Se vias_proibidas e cities_locations forem passados,
+    desenha essas arestas proibidas com cor diferente (roxo).
+    Note: cities_locations deve conter os pontos correspondentes a path (pode ser scaled).
     """
-    pygame.draw.lines(screen, rgb_color, True, path, width=width)
+   
+    for start, end in vias_proibidas:
+        pygame.draw.line(screen, (128, 0, 128), start, end, width=3) 
+
+    for i in range(len(path) - 1):
+        start = path[i]
+        end = path[i + 1]
+        color = rgb_color
+        if vias_proibidas and cities_locations:
+            try:
+                idx1 = cities_locations.index(start)
+                idx2 = cities_locations.index(end)
+                if (idx1, idx2) in vias_proibidas or (idx2, idx1) in vias_proibidas:
+                    color = (180, 0, 180)  # roxo
+            except ValueError:
+                # se não encontrou índice (ex.: path com pontos escalados que não batem),
+                # ignoramos a checagem e desenhamos normalmente.
+                pass
+        pygame.draw.line(screen, color, start, end, width)
 
 
 def draw_text(
