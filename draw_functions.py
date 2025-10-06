@@ -60,7 +60,8 @@ def draw_cities(
     cities_locations: List[Tuple[int, int]],
     rgb_color: Tuple[int, int, int],
     node_radius: int,
-    depot: Tuple[int, int] = None
+    depot: Tuple[int, int] = None,
+    cidades_prioritarias: List[Tuple[int, int]] = []
 ) -> None:
     """
     Draws circles representing cities on the given Pygame screen.
@@ -74,8 +75,17 @@ def draw_cities(
     Returns:
     None
     """
+    #for city_location in cities_locations:
+    #    color = (0, 0, 0) if depot is not None and city_location == depot else rgb_color
+    #    pygame.draw.circle(screen, color, city_location, node_radius)
+
     for city_location in cities_locations:
-        color = (0, 0, 0) if depot is not None and city_location == depot else rgb_color
+        if depot is not None and city_location == depot:
+            color = (0,0,0)
+        elif city_location in cidades_prioritarias:
+            color = (128, 0, 128)  # roxo
+        else:
+            color = rgb_color
         pygame.draw.circle(screen, color, city_location, node_radius)
 
 

@@ -58,6 +58,28 @@ restricao_via_proibida = False
 restricao_cidade_prioritaria = False
 restricao_max_cidades = False
 
+def aplicar_cidade_prioritaria(route, prioridades):
+    """
+    Garante que a cidade prioritária seja a primeira a ser visitada após o depósito.
+    """
+    depot = route[0]
+    rest = route[1:-1]  # exclui depósito do início/fim
+    for cidade in prioridades:
+        if cidade in rest:
+            rest.remove(cidade)
+            rest = [cidade] + rest  # coloca prioridade no início
+    return [depot] + rest + [depot]
+
+def set_cidades_prioritarias():
+    global cidades_prioritarias
+    cidades_prioritarias = []
+    if restricao_cidade_prioritaria:
+        cidades_prioritarias = [(944, 389),
+                                (674, 342),
+                                (900, 174),
+                                (1120, 387)]
+        cidades_prioritarias = [tuple(c) for c in cidades_prioritarias] 
+
 def set_viaProibida():
     global vias_proibidas
     vias_proibidas = []
@@ -65,7 +87,7 @@ def set_viaProibida():
         vias_proibidas = [((814, 344),(877, 291)),
                   ((779, 252),(784, 221)),
                   ((1013, 165),(1014, 119)),
-                  ((1120, 387),(1123, 341))]
+                  ((1100, 443),(1108, 519))]
 
 def set_restricao(tipo, val):
     global restricao_via_proibida, restricao_cidade_prioritaria, restricao_max_cidades
@@ -115,9 +137,17 @@ def prepare_cities():
     vehicle_populations = []
     for cluster in vehicle_clusters:
         population = []
+        # Heurísticas iniciais
         for i in range(1, len(cluster)-1):
-            population.append(nearest_neighbor_heuristic(cluster, i, cities_compare, vias_proibidas))
-        population.extend(generate_random_population(cluster, POPULATION_SIZE - len(population)))
+            sol = nearest_neighbor_heuristic(cluster, i)
+            if restricao_cidade_prioritaria:
+                sol = aplicar_cidade_prioritaria(sol, cidades_prioritarias)
+            population.append(sol)
+        # População aleatória restante
+        random_population = generate_random_population(cluster, POPULATION_SIZE - len(population))
+        if restricao_cidade_prioritaria:
+            random_population = [aplicar_cidade_prioritaria(p, cidades_prioritarias) for p in random_population]
+        population.extend(random_population)
         vehicle_populations.append(population)
 
 # ------------------------- PYGAME -------------------------
@@ -135,6 +165,7 @@ def reiniciar_GA():
     vehicle_last_change = [0]*NUM_VEHICLES
     generation_counter = itertools.count(start=1)
     set_viaProibida()
+    set_cidades_prioritarias()
     prepare_cities()
 # ------------------------- LOOP PRINCIPAL -------------------------
 
@@ -188,7 +219,7 @@ while running:
             vias_proibidas=vias_proibidas if restricao_via_proibida else [],
             cities_locations=att_48_cities_locations
         )
-        draw_cities(screen, vehicle_clusters[v], VEHICLE_COLORS[v], NODE_RADIUS, depot)
+        draw_cities(screen, vehicle_clusters[v], VEHICLE_COLORS[v], NODE_RADIUS, depot, cidades_prioritarias)
 
         # Evolução da população
         new_population = [population[0]]
@@ -198,6 +229,11 @@ while running:
             child1, child2 = order_crossover(parent1, parent2)
             child1 = mutate(child1, MUTATION_PROBABILITY)
             child2 = mutate(child2, MUTATION_PROBABILITY)
+
+            if restricao_cidade_prioritaria:
+                child1 = aplicar_cidade_prioritaria(child1, cidades_prioritarias)
+                child2 = aplicar_cidade_prioritaria(child2, cidades_prioritarias)
+
             new_population.append(child1)
             if len(new_population) < POPULATION_SIZE:
                 new_population.append(child2)
