@@ -24,7 +24,8 @@ from genetic_algorithm import (
     nearest_neighbor_heuristic,
     order_crossover,
     sort_population,
-    tournament_selection
+    tournament_selection,
+    calculate_distance
 )
 
 from sklearn.cluster import KMeans
@@ -37,10 +38,12 @@ NODE_RADIUS = 10
 FPS = 30
 
 POPULATION_SIZE = 100
-MUTATION_PROBABILITY = 0.7
+MUTATION_PROBABILITY = 0.5
 NUM_VEHICLES = 4
 VEHICLE_COLORS = [(255,0,0), (0,255,0), (0,0,255), (255,165,0)]
 MARGIN = 50
+PROHIBITED_PENALTY = 1e6
+MAX_DISTANCE = 900
 
 LEFT_PANEL_WIDTH = 500
 RIGHT_PANEL_WIDTH = SCREEN_WIDTH - LEFT_PANEL_WIDTH 
@@ -51,12 +54,12 @@ TABLE_HEIGHT = 200
 checkboxes = [
     {"rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 20, 20, 20), "text": "Via proibida", "value": lambda: restricao_via_proibida, "set": lambda val: set_restricao("vias", val)},
     {"rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 50, 20, 20), "text": "Cidade prioritária", "value": lambda: restricao_cidade_prioritaria, "set": lambda val: set_restricao("prioridade", val)},
-    {"rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 80, 20, 20), "text": "Máx. cidades", "value": lambda: restricao_max_cidades, "set": lambda val: set_restricao("max", val)},
+    {"rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 80, 20, 20), "text": "Parada para Abastecer", "value": lambda: restricao_abastecimento, "set": lambda val: set_restricao("max", val)},
 ]
 
 restricao_via_proibida = False
 restricao_cidade_prioritaria = False
-restricao_max_cidades = False
+restricao_abastecimento = False
 
 def aplicar_cidade_prioritaria(route, prioridades):
     """
@@ -70,7 +73,7 @@ def aplicar_cidade_prioritaria(route, prioridades):
             rest = [cidade] + rest  # coloca prioridade no início
     return [depot] + rest + [depot]
 
-def set_cidades_prioritarias():
+def set_cidadesPrioritarias():
     global cidades_prioritarias
     cidades_prioritarias = []
     if restricao_cidade_prioritaria:
@@ -87,16 +90,50 @@ def set_viaProibida():
         vias_proibidas = [((814, 344),(877, 291)),
                   ((779, 252),(784, 221)),
                   ((1013, 165),(1014, 119)),
-                  ((1100, 443),(1108, 519))]
+                  ((1100, 443),(1108, 519))]    
+        
+def inserir_paradas(route, postos, alcance_maximo):
+    """
+    Adiciona postos obrigatórios na rota quando a distância acumulada ultrapassa o alcance.
+    """
+    nova_rota = [route[0]]  # começar no depósito
+    distancia_acumulada = 0
+
+    for i in range(len(route)-1):
+        p1, p2 = route[i], route[i+1]
+        d = calculate_distance(p1, p2, cities_locations, vias_proibidas)
+        
+        if d < PROHIBITED_PENALTY:
+            distancia_acumulada += d
+
+        if distancia_acumulada > alcance_maximo:
+            # Encontrar posto mais próximo do ponto atual (p1)
+            posto_proximo = min(postos, key=lambda p: calculate_distance(p1, p))
+            nova_rota.append(posto_proximo)
+            distancia_acumulada = calculate_distance(posto_proximo, p2)       
+
+        nova_rota.append(p2)
+
+    return nova_rota
+        
+def set_PostosAbastecimento():
+    global postos_abastecimento
+    postos_abastecimento = []
+    if restricao_abastecimento:
+        postos_abastecimento = [(710, 150),
+                               (840, 370),
+                               (1010, 220),
+                               (1060, 430)]
+        postos_abastecimento = [tuple(c) for c in postos_abastecimento]
 
 def set_restricao(tipo, val):
-    global restricao_via_proibida, restricao_cidade_prioritaria, restricao_max_cidades
+    global restricao_via_proibida, restricao_cidade_prioritaria, restricao_abastecimento
     if tipo == "vias":
         restricao_via_proibida = val
     elif tipo == "prioridade":
         restricao_cidade_prioritaria = val
     elif tipo == "max":
-        restricao_max_cidades = val
+        restricao_abastecimento = val
     reiniciar_GA()  # reinicia apenas populações e histórico
 
 # ------------------------- PREPARAR CIDADES -------------------------
@@ -130,10 +167,6 @@ def prepare_cities():
     for i in range(NUM_VEHICLES):
         vehicle_clusters[i] = [depot] + vehicle_clusters[i] + [depot]
 
-    cities_compare = []
-    if restricao_via_proibida:
-        cities_compare = cities_locations
-
     vehicle_populations = []
     for cluster in vehicle_clusters:
         population = []
@@ -141,12 +174,12 @@ def prepare_cities():
         for i in range(1, len(cluster)-1):
             sol = nearest_neighbor_heuristic(cluster, i)
             if restricao_cidade_prioritaria:
-                sol = aplicar_cidade_prioritaria(sol, cidades_prioritarias)
+                sol = aplicar_cidade_prioritaria(sol, cidades_prioritarias)           
             population.append(sol)
         # População aleatória restante
         random_population = generate_random_population(cluster, POPULATION_SIZE - len(population))
         if restricao_cidade_prioritaria:
-            random_population = [aplicar_cidade_prioritaria(p, cidades_prioritarias) for p in random_population]
+            random_population = [aplicar_cidade_prioritaria(p, cidades_prioritarias) for p in random_population]        
         population.extend(random_population)
         vehicle_populations.append(population)
 
@@ -165,7 +198,8 @@ def reiniciar_GA():
     vehicle_last_change = [0]*NUM_VEHICLES
     generation_counter = itertools.count(start=1)
     set_viaProibida()
-    set_cidades_prioritarias()
+    set_cidadesPrioritarias()
+    set_PostosAbastecimento()
     prepare_cities()
 # ------------------------- LOOP PRINCIPAL -------------------------
 
@@ -200,10 +234,10 @@ while running:
     for v in range(NUM_VEHICLES):
         population = vehicle_populations[v]        
 
-        population_fitness = [calculate_fitness(ind, cities_locations, vias_proibidas) for ind in population]
+        population_fitness = [calculate_fitness(ind, cities_locations, vias_proibidas, postos_abastecimento) for ind in population]
         population, population_fitness = sort_population(population, population_fitness)
 
-        best_fitness = calculate_fitness(population[0], cities_locations, vias_proibidas)
+        best_fitness = calculate_fitness(population[0], cities_locations, vias_proibidas, postos_abastecimento)
         best_solution = population[0]
 
         if len(vehicle_best_solutions[v]) == 0 or vehicle_best_solutions[v][-1] != best_solution:
@@ -215,11 +249,16 @@ while running:
         vehicle_info.append((v, best_fitness, num_cities, vehicle_last_change[v]))
 
         draw_paths(
-            screen, best_solution, VEHICLE_COLORS[v], width=3,
+            screen,
+            best_solution,
+            VEHICLE_COLORS[v],
+            width=3,
             vias_proibidas=vias_proibidas if restricao_via_proibida else [],
-            cities_locations=att_48_cities_locations
+            cities_locations=cities_locations,
+            postos_abastecimento=postos_abastecimento
         )
-        draw_cities(screen, vehicle_clusters[v], VEHICLE_COLORS[v], NODE_RADIUS, depot, cidades_prioritarias)
+
+        draw_cities(screen, vehicle_clusters[v], VEHICLE_COLORS[v], NODE_RADIUS, depot, cidades_prioritarias, postos_abastecimento)
 
         # Evolução da população
         new_population = [population[0]]
@@ -233,7 +272,7 @@ while running:
             if restricao_cidade_prioritaria:
                 child1 = aplicar_cidade_prioritaria(child1, cidades_prioritarias)
                 child2 = aplicar_cidade_prioritaria(child2, cidades_prioritarias)
-
+          
             new_population.append(child1)
             if len(new_population) < POPULATION_SIZE:
                 new_population.append(child2)
@@ -269,9 +308,10 @@ while running:
     vehicle_info.sort(key=lambda x: x[1])
     font = pygame.font.SysFont("Arial", 20)
     start_x, start_y = 10, GRAPH_HEIGHT + 20
-    col_widths = [80, 120, 150, 150]
+    col_widths = [150, 120, 150, 80]
     row_height = 35
-    headers = ["Veículo", "Distância", "Cidades visitadas", "Última mudança"]
+    headers = ["Veículo", "Distância", "Cidades", "Geração"]
+    veiculos = ['Veículo 1', 'Veículo 2', 'Veículo 3', 'Veículo 4']
 
     # Cabeçalho
     for col, header in enumerate(headers):
@@ -287,15 +327,27 @@ while running:
     # Linhas da tabela (veículos)
     for row, info in enumerate(vehicle_info):
         v, dist, num_cities, last_change = info
-        values = [str(v+1), str(round(dist)), str(num_cities-1), str(last_change)]
+        values = [v, str(round(dist)), str(num_cities-1), str(last_change)]
         for col, val in enumerate(values):
             x = start_x + sum(col_widths[:col])
             y = start_y + row*row_height
             bg_color = (240,240,240) if row % 2 == 0 else (220,220,220)
             pygame.draw.rect(screen, bg_color, (x, y, col_widths[col], row_height))
             pygame.draw.rect(screen, (0,0,0), (x, y, col_widths[col], row_height), 2)
-            text_surface = font.render(val, True, (0,0,0))
-            screen.blit(text_surface, (x + 5, y + 5))
+            
+             # Desenhar círculo colorido na primeira coluna
+            if col == 0:
+                text_surface = font.render(veiculos[val], True, (0,0,0))
+                screen.blit(text_surface, (x + 40, y + 5))
+                 # Risco menor e centralizado na célula
+                line_length = 20  # tamanho fixo igual à legenda do gráfico
+                line_x_start = x + 5  # margem da célula
+                line_x_end = line_x_start + line_length
+                line_y = y + row_height // 2
+                pygame.draw.line(screen, VEHICLE_COLORS[v], (line_x_start, line_y), (line_x_end, line_y), 4)
+            else:
+                text_surface = font.render(val, True, (0,0,0))
+                screen.blit(text_surface, (x + 5, y + 5))
 
     # ----------------- LINHA DE TOTALIZADORES -----------------
     total_dist = sum(info[1] for info in vehicle_info)

@@ -8,6 +8,7 @@ from typing import List, Tuple
 # Ex: (0,3) impede ir da cidade índice 0 para 3 (e vice-versa).
 
 PROHIBITED_PENALTY = 1e6
+MAX_DISTANCE = 900
 
 # ------------------------- FUNÇÕES BÁSICAS -------------------------
 
@@ -31,14 +32,45 @@ def calculate_distance(point1: Tuple[float, float], point2: Tuple[float, float],
             pass
     return math.hypot(point1[0] - point2[0], point1[1] - point2[1])
 
-def calculate_fitness(path: List[Tuple[float, float]], cities_location=None, vias_proibidas=None) -> float:
-    """Calcula fitness como soma das distâncias da rota; respeita vias proibidas se cities_location for dado."""
+def calculate_fitness(path: List[Tuple[float, float]],
+                      cities_location=None, vias_proibidas=None,
+                      postos: List[Tuple[float, float]] = None) -> float:
+    """
+    Calcula fitness como soma das distâncias da rota.
+    - Respeita vias proibidas se cities_location for dado.
+    - Se houver postos definidos, o veículo deve parar para reabastecer
+      sempre que ultrapassar DIST_MAX_SEM_ABASTECER sem abastecer.
+    """
     distance = 0.0
+    since_last_refuel = 0.0
     n = len(path)
+    visited = set()
+
     for i in range(n):
         a = path[i]
         b = path[(i + 1) % n]
-        distance += calculate_distance(a, b, cities_location, vias_proibidas)
+
+        d = calculate_distance(a, b, cities_location, vias_proibidas)
+        distance += d
+
+        if b in visited and b != path[0]:  # exclui depósito
+            return PROHIBITED_PENALTY  # penalidade grande
+        visited.add(b)
+
+        if d < PROHIBITED_PENALTY:
+            since_last_refuel += d
+
+        # Penalidade se a cidade já foi visitada
+       
+
+        # Se passou do limite, força parada no posto mais próximo
+        if postos and since_last_refuel > MAX_DISTANCE:
+            posto_proximo = min(postos, key=lambda p: calculate_distance(a, p, cities_location, vias_proibidas))
+            d_posto = calculate_distance(a, posto_proximo, cities_location, vias_proibidas)
+            d_volta = calculate_distance(posto_proximo, b, cities_location, vias_proibidas)
+            distance += d_posto + d_volta  # adiciona caminho até o posto e de volta à rota
+            since_last_refuel = 0.0  # reseta contador
+
     return distance
 # ------------------------- POPULAÇÃO -------------------------
 
@@ -70,14 +102,20 @@ def nearest_neighbor_heuristic(
     current_city = cities_locations[start_city_index]
     route = [depot, current_city]
     unvisited.remove(current_city)
+    visited = {current_city}
 
     while unvisited:
+        candidates = [city for city in unvisited if city not in visited]
+        if not candidates:
+            break  # caso não tenha candidatos (redundante, mas seguro)
+
         nearest_city = min(
-            unvisited, key=lambda city: calculate_distance(current_city, city, cities_compare, vias_proibidas)
+            candidates, key=lambda city: calculate_distance(current_city, city, cities_compare, vias_proibidas)
         )
         route.append(nearest_city)
         unvisited.remove(nearest_city)
         current_city = nearest_city
+        visited.add(nearest_city)
 
     route.append(depot)  # volta ao depósito
     return route
