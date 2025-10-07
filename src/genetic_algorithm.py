@@ -1,45 +1,40 @@
+# -*- coding: utf-8 -*-
+"""
+Genetic Algorithm functions for TSP.
+
+Core genetic algorithm operations: fitness calculation, selection, crossover, mutation.
+"""
+
 import copy
 import math
 import random
-from typing import List, Tuple
+from typing import List, Protocol, Tuple
 
-# ------------------------- RESTRIÇÕES -------------------------
-# Edite estes pares com os índices das cidades do seu `att_48_cities_locations`
-# Ex: (0,3) impede ir da cidade índice 0 para 3 (e vice-versa).
+from tsp_problem import TSPProblem
 
-PROHIBITED_PENALTY = 1e6
-MAX_DISTANCE = 900
 
-# ------------------------- FUNÇÕES BÁSICAS -------------------------
-
-def calculate_distance(point1: Tuple[float, float], point2: Tuple[float, float], cities_location=None, vias_proibidas=None) -> float:
+def calculate_distance(
+    point1: Tuple[float, float],
+    point2: Tuple[float, float],
+    cities_location=None,
+    vias_proibidas=None,
+) -> float:
     """
     Distância Euclidiana entre dois pontos.
-    Se `cities_location` for passado, checa vias_proibidas usando os índices.
-    Retorna PROHIBITED_PENALTY quando a aresta for proibida.
+    Função mantida para compatibilidade com código legado.
     """
-    if cities_location is not None:
-        try:
-            city_to_index = {coord: i for i, coord in enumerate(cities_location)}
-            idx1 = city_to_index.get(point1)
-            idx2 = city_to_index.get(point2)
-
-            if idx1 is not None and idx2 is not None:
-                if (point1, point2) in vias_proibidas or (point2, point1) in vias_proibidas:
-                    return PROHIBITED_PENALTY           
-        except ValueError:
-            # ponto não está na lista passada (fallback para distância normal)
-            pass
     return math.hypot(point1[0] - point2[0], point1[1] - point2[1])
 
-def calculate_fitness(path: List[Tuple[float, float]],
-                      cities_location=None, vias_proibidas=None,
-                      postos: List[Tuple[float, float]] = None) -> float:
+
+def calculate_fitness(
+    path: List[Tuple[float, float]],
+    cities_location=None,
+    vias_proibidas=None,
+    postos: List[Tuple[float, float]] = None,
+) -> float:
     """
     Calcula fitness como soma das distâncias da rota.
-    - Respeita vias proibidas se cities_location for dado.
-    - Se houver postos definidos, o veículo deve parar para reabastecer
-      sempre que ultrapassar DIST_MAX_SEM_ABASTECER sem abastecer.
+    Função mantida para compatibilidade com código legado.
     """
     distance = 0.0
     since_last_refuel = 0.0
@@ -54,35 +49,71 @@ def calculate_fitness(path: List[Tuple[float, float]],
         distance += d
 
         if b in visited and b != path[0]:  # exclui depósito
-            return PROHIBITED_PENALTY  # penalidade grande
+            return 1000000.0  # penalidade grande
         visited.add(b)
 
-        if d < PROHIBITED_PENALTY:
+        if d < 1000000.0:
             since_last_refuel += d
 
-        # Penalidade se a cidade já foi visitada
-       
-
         # Se passou do limite, força parada no posto mais próximo
-        if postos and since_last_refuel > MAX_DISTANCE:
-            posto_proximo = min(postos, key=lambda p: calculate_distance(a, p, cities_location, vias_proibidas))
-            d_posto = calculate_distance(a, posto_proximo, cities_location, vias_proibidas)
-            d_volta = calculate_distance(posto_proximo, b, cities_location, vias_proibidas)
-            distance += d_posto + d_volta  # adiciona caminho até o posto e de volta à rota
+        if postos and since_last_refuel > 900:  # MAX_DISTANCE
+            posto_proximo = min(
+                postos,
+                key=lambda p: calculate_distance(a, p, cities_location, vias_proibidas),
+            )
+            d_posto = calculate_distance(
+                a, posto_proximo, cities_location, vias_proibidas
+            )
+            d_volta = calculate_distance(
+                posto_proximo, b, cities_location, vias_proibidas
+            )
+            distance += (
+                d_posto + d_volta
+            )  # adiciona caminho até o posto e de volta à rota
             since_last_refuel = 0.0  # reseta contador
 
     return distance
+
+
+class FitnessCalculator:
+    """Calculates fitness for TSP routes."""
+
+    def __init__(self, problem: TSPProblem):
+        self.problem = problem
+
+    def calculate_fitness(self, route: List[Tuple[float, float]]) -> float:
+        """
+        Calculate fitness of a route.
+
+        Args:
+            route: The route to evaluate
+
+        Returns:
+            Fitness value (lower is better)
+        """
+        return self.problem.calculate_route_distance(route)
+
+
 # ------------------------- POPULAÇÃO -------------------------
 
+
 def generate_random_population(
-    cities_location: List[Tuple[float, float]], population_size: int
+    problem_or_cities, population_size: int
 ) -> List[List[Tuple[float, float]]]:
     """
     Gera população aleatória de rotas.
     Mantém depósito fixo na primeira e última posição.
+    Suporta tanto TSPProblem quanto lista de cidades (para compatibilidade).
     """
-    depot = cities_location[0]  # Considera primeiro ponto como depósito
-    cities = cities_location[1:-1]  # Exclui depósito para embaralhar
+    if isinstance(problem_or_cities, TSPProblem):
+        depot = problem_or_cities.depot
+        cities = problem_or_cities.cities[1:-1]  # Exclui depósito para embaralhar
+    else:
+        # Modo legado
+        cities = problem_or_cities
+        depot = cities[0]
+        cities = cities[1:-1]  # Exclui depósito para embaralhar
+
     population = []
     for _ in range(population_size):
         route = cities[:]
@@ -91,15 +122,38 @@ def generate_random_population(
         population.append(route)
     return population
 
+
 # ------------------------- HEURÍSTICAS -------------------------
 
+
 def nearest_neighbor_heuristic(
-    cities_locations: List[Tuple[float, float]], start_city_index: int = 1, cities_compare: List[Tuple[float, float]] = None, vias_proibidas: List[Tuple[Tuple[float, float], Tuple[float, float]]] = None
+    problem_or_cities,
+    start_city_index: int = 1,
+    cities_compare=None,
+    vias_proibidas=None,
 ) -> List[Tuple[float, float]]:
-    """Heurística vizinho mais próximo, mantendo depósito fixo no início e fim."""
-    depot = cities_locations[0]
-    unvisited = cities_locations[1:]  # exclui depósito
-    current_city = cities_locations[start_city_index]
+    """
+    Heurística vizinho mais próximo, mantendo depósito fixo no início e fim.
+    Suporta tanto TSPProblem quanto lista de cidades (para compatibilidade).
+    """
+    if isinstance(problem_or_cities, TSPProblem):
+        problem = problem_or_cities
+        depot = problem.depot
+        cities = problem.cities
+        calculate_dist = problem.calculate_distance
+    else:
+        # Modo legado
+        cities = problem_or_cities
+        depot = cities[0]
+        cities = cities  # usa cities_compare se fornecido
+        if cities_compare:
+            cities = cities_compare
+
+        def calculate_dist(p1, p2):
+            return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+    unvisited = cities[1:]  # exclui depósito
+    current_city = cities[start_city_index]
     route = [depot, current_city]
     unvisited.remove(current_city)
     visited = {current_city}
@@ -107,20 +161,22 @@ def nearest_neighbor_heuristic(
     while unvisited:
         candidates = [city for city in unvisited if city not in visited]
         if not candidates:
-            break  # caso não tenha candidatos (redundante, mas seguro)
+            break
 
         nearest_city = min(
-            candidates, key=lambda city: calculate_distance(current_city, city, cities_compare, vias_proibidas)
+            candidates, key=lambda city: calculate_dist(current_city, city)
         )
         route.append(nearest_city)
         unvisited.remove(nearest_city)
         current_city = nearest_city
         visited.add(nearest_city)
 
-    route.append(depot)  # volta ao depósito
+    route.append(depot)
     return route
 
+
 # ------------------------- SELEÇÃO -------------------------
+
 
 def tournament_selection(
     population: List[List[Tuple[float, float]]],
@@ -133,7 +189,9 @@ def tournament_selection(
     winner_index = tournament_indices[tournament_fitness.index(min(tournament_fitness))]
     return population[winner_index]
 
+
 # ------------------------- CROSSOVER -------------------------
+
 
 def order_crossover(
     parent1: List[Tuple[float, float]], parent2: List[Tuple[float, float]]
@@ -169,7 +227,9 @@ def order_crossover(
 
     return child1, child2
 
+
 # ------------------------- MUTATION -------------------------
+
 
 def mutate(
     solution: List[Tuple[float, float]], mutation_probability: float
@@ -192,7 +252,9 @@ def mutate(
         mutated_solution[1:-1] = sub
     return mutated_solution
 
+
 # ------------------------- SORT POPULATION -------------------------
+
 
 def sort_population(
     population: List[List[Tuple[float, float]]], fitness: List[float]
