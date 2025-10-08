@@ -9,11 +9,12 @@ import itertools
 from typing import List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+import pygame
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from benchmark_att48 import att_48_cities_locations
 from clustering import CityClusterer
-from config import (
+from constants import (
     ELITE_SIZE,
     MUTATION_PROBABILITY,
     NUM_VEHICLES,
@@ -21,7 +22,6 @@ from config import (
     TOURNAMENT_SIZE,
     VEHICLE_COLORS,
 )
-from draw_functions import draw_plot
 from ga_engine import GeneticAlgorithmEngine
 from genetic_algorithm import (
     FitnessCalculator,

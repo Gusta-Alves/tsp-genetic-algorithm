@@ -21,6 +21,24 @@ from pygame.locals import *
 from sklearn.cluster import KMeans
 
 from benchmark_att48 import *
+from constants import (
+    CHECKBOX_OFFSET_X,
+    CHECKBOX_OFFSET_Y_START,
+    CHECKBOX_SPACING,
+    FPS,
+    GRAPH_HEIGHT,
+    LEFT_PANEL_WIDTH,
+    MARGIN,
+    MUTATION_PROBABILITY,
+    NODE_RADIUS,
+    NUM_VEHICLES,
+    POPULATION_SIZE,
+    PROHIBITED_PENALTY,
+    RIGHT_PANEL_WIDTH,
+    SCREEN_HEIGHT,
+    SCREEN_WIDTH,
+    VEHICLE_COLORS,
+)
 from draw_functions import draw_cities, draw_paths
 from genetic_algorithm import (
     calculate_distance,
@@ -33,40 +51,34 @@ from genetic_algorithm import (
     tournament_selection,
 )
 
-# ------------------------- CONSTANTES -------------------------
-SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 650
-NODE_RADIUS = 10
-FPS = 30
-
-POPULATION_SIZE = 100
-MUTATION_PROBABILITY = 0.5
-NUM_VEHICLES = 4
-VEHICLE_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0)]
-MARGIN = 50
-PROHIBITED_PENALTY = 1e6
-MAX_DISTANCE = 900
-
-LEFT_PANEL_WIDTH = 500
-RIGHT_PANEL_WIDTH = SCREEN_WIDTH - LEFT_PANEL_WIDTH
-GRAPH_HEIGHT = 400
-TABLE_HEIGHT = 200
-
 # ------------------------- RESTRIÇÕES -------------------------
 checkboxes = [
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 20, 20, 20),
+        "rect": pygame.Rect(
+            LEFT_PANEL_WIDTH + CHECKBOX_OFFSET_X, CHECKBOX_OFFSET_Y_START, 20, 20
+        ),
         "text": "Via proibida",
         "value": lambda: restricao_via_proibida,
         "set": lambda val: set_restricao("vias", val),
     },
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 50, 20, 20),
+        "rect": pygame.Rect(
+            LEFT_PANEL_WIDTH + CHECKBOX_OFFSET_X,
+            CHECKBOX_OFFSET_Y_START + CHECKBOX_SPACING,
+            20,
+            20,
+        ),
         "text": "Cidade prioritária",
         "value": lambda: restricao_cidade_prioritaria,
         "set": lambda val: set_restricao("prioridade", val),
     },
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 80, 20, 20),
+        "rect": pygame.Rect(
+            LEFT_PANEL_WIDTH + CHECKBOX_OFFSET_X,
+            CHECKBOX_OFFSET_Y_START + 2 * CHECKBOX_SPACING,
+            20,
+            20,
+        ),
         "text": "Parada para Abastecer",
         "value": lambda: restricao_abastecimento,
         "set": lambda val: set_restricao("max", val),

@@ -7,7 +7,7 @@ Defines the Traveling Salesman Problem structure and constraints.
 
 from typing import List, Optional, Tuple
 
-from config import MAX_DISTANCE, PROHIBITED_PENALTY
+from constants import MAX_DISTANCE, PROHIBITED_PENALTY
 
 
 class TSPProblem:

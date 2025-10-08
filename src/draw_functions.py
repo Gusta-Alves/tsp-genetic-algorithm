@@ -6,19 +6,14 @@ Created on Fri Dec 22 16:03:11 2023
 """
 from typing import List, Tuple
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pygame
-import pylab
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
+from constants import MAX_DISTANCE
 from genetic_algorithm import calculate_distance
 from tsp_problem import TSPProblem
-
-matplotlib.use("Agg")
-
-MAX_DISTANCE = 900
 
 
 def draw_button(screen, rect, text, color_bg, color_text=(255, 255, 255)):
