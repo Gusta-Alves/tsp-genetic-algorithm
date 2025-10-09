@@ -34,14 +34,14 @@ from genetic_algorithm import (
 )
 
 # ------------------------- CONSTANTES -------------------------
-SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 650
+SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 700
 NODE_RADIUS = 10
 FPS = 30
 
 POPULATION_SIZE = 100
 MUTATION_PROBABILITY = 0.5
-NUM_VEHICLES = 4
-VEHICLE_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0)]
+NUM_VEHICLES = 5
+VEHICLE_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0),(160, 32, 240)]
 MARGIN = 50
 PROHIBITED_PENALTY = 1e6
 MAX_DISTANCE = 900
@@ -72,6 +72,20 @@ checkboxes = [
         "set": lambda val: set_restricao("max", val),
     },
 ]
+
+input_values = {
+    "veiculos": "5",
+    "cidades": "48",
+    #"limite_dist": "1000"  # exemplo de valor inicial
+    }
+
+# Retângulos dos inputs
+input_rects = {
+    "veiculos": pygame.Rect(LEFT_PANEL_WIDTH + 125, GRAPH_HEIGHT + 162, 28, 28),
+    "cidades": pygame.Rect(LEFT_PANEL_WIDTH + 125, GRAPH_HEIGHT + 202, 28, 28),
+    #"limite_dist": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 230, 80, 28)
+}
+
 
 restricao_via_proibida = False
 restricao_cidade_prioritaria = False
@@ -220,21 +234,25 @@ clock = pygame.time.Clock()
 
 # ------------------------- FUNÇÃO PARA REINICIAR POPULAÇÃO -------------------------
 def reiniciar_GA():
-    global vehicle_best_fitness, vehicle_best_solutions, vehicle_last_change, generation_counter
+    global vehicle_best_fitness, vehicle_best_solutions, vehicle_last_change, generation_counter, vehicle_info
     vehicle_best_fitness = [[] for _ in range(NUM_VEHICLES)]
     vehicle_best_solutions = [[] for _ in range(NUM_VEHICLES)]
-    vehicle_last_change = [0] * NUM_VEHICLES
-    generation_counter = itertools.count(start=1)
+    vehicle_last_change = [0] * NUM_VEHICLES    
+    generation_counter = itertools.count(start=1)    
+    vehicle_info = []
     set_viaProibida()
     set_cidadesPrioritarias()
-    set_PostosAbastecimento()
+    set_PostosAbastecimento()    
     prepare_cities()
-
 
 # ------------------------- LOOP PRINCIPAL -------------------------
 
 reiniciar_GA()
-
+isEditing = False
+btn_color = (210, 210, 210)  # cinza padrão
+color_veiculos = (210, 210, 210)
+color_cidades = (210, 210, 210)
+btn_text = "EDITAR"
 running = True
 while running:
     for event in pygame.event.get():
@@ -246,7 +264,60 @@ while running:
             for cb in checkboxes:
                 if cb["rect"].collidepoint(event.pos):
                     cb["set"](not cb["value"]())
+            if btn_editar.collidepoint(event.pos):  # botão esquerdo do mouse
+                isEditing = not isEditing
+                if isEditing:
+                    btn_color = (120, 200, 120)  # verde para confirmar
+                    btn_text = "CONFIRMAR"                                        
+                else:
+                    btn_color = (210, 210, 210)  # cinza padrão3
+                    btn_text = "EDITAR"     
+                    color_veiculos = (210,210,210)
+                    color_cidades = (210,210,210)  
+                    if input_values["veiculos"] == "":
+                        input_values["veiculos"] = str(NUM_VEHICLES)
+                    if input_values["cidades"] == "":
+                        input_values["cidades"] = str(len(att_48_cities_locations))   
 
+                    NUM_VEHICLES = int(input_values["veiculos"])     
+                reiniciar_GA()
+            # ----------------- CLIQUE NOS INPUTS -----------------
+            mouse_pos = pygame.mouse.get_pos()
+            mouse_pressed = pygame.mouse.get_pressed()
+
+            if isEditing and mouse_pressed[0]:
+                for key, rect in input_rects.items():
+                    if rect.collidepoint(mouse_pos):
+                        active_input = key
+                        break
+                else:
+                    active_input = None
+
+                if active_input == "veiculos":
+                    input_values["veiculos"] = ""
+                    color_veiculos = (255,255,255)
+                    color_cidades = (210,210,210)
+                elif active_input == "cidades":
+                    input_values["cidades"] = ""
+                    color_veiculos = (210,210,210)
+                    color_cidades = (255,255,255)    
+
+        elif event.type == pygame.KEYDOWN and active_input and isEditing:
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                active_input = None
+            elif event.key == pygame.K_BACKSPACE:
+                input_values[active_input] = input_values[active_input][:-1]
+            elif event.unicode.isdigit() and len(input_values[active_input]) < 4:
+                new_text = input_values[active_input] + event.unicode                
+                try:
+                    val = int(new_text)
+                    if active_input == "veiculos" and 1 <= val <= 5:
+                        input_values["veiculos"] = str(val)
+                    elif active_input == "cidades" and 1 <= val <= 48:                       
+                        input_values["cidades"] = str(val)
+                except ValueError:
+                    pass
+            
     generation = next(generation_counter)
     screen.fill((255, 255, 255))
 
@@ -274,76 +345,110 @@ while running:
             (cb["rect"].x + 25, cb["rect"].y - 2),
         )
 
-    # ----------------- PARA CADA VEÍCULO -----------------
-    vehicle_info = []
-    for v in range(NUM_VEHICLES):
-        population = vehicle_populations[v]
+    # ----------------- BOTAO DE PAUSE -----------------        
+    btn_editar = pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 130, 100, 30)  # Retângulo do botão
 
-        population_fitness = [
-            calculate_fitness(
-                ind, cities_locations, vias_proibidas, postos_abastecimento
+    # Desenhar botão
+    pygame.draw.rect(screen, btn_color, btn_editar, border_radius=4)    # fundo
+    pygame.draw.rect(screen, (0,0,0), btn_editar, 2, border_radius=4)         # borda
+
+    # Texto centralizado
+    text_surface = font.render(btn_text, True, (0,0,0))
+    text_x = btn_editar.x + (btn_editar.width - text_surface.get_width()) // 2
+    text_y = btn_editar.y + (btn_editar.height - text_surface.get_height()) // 2
+    screen.blit(text_surface, (text_x, text_y))
+        
+    # Rótulos dos campos
+    screen.blit(font.render("Nº de Veículos:", True, (0, 0, 0)), (LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 170))
+    screen.blit(font.render("Nº de Cidades:", True, (0, 0, 0)), (LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 210))
+
+    # ----------------- DESENHAR INPUTS -----------------
+    for key, rect in input_rects.items():
+        # Desenha retângulo do input
+        if key == "veiculos":
+            pygame.draw.rect(screen, color_veiculos, rect)
+        else:
+            pygame.draw.rect(screen, color_cidades, rect)
+        
+        pygame.draw.rect(screen, (0,0,0), rect, 2)
+
+        # Texto centralizado
+        text_surface = font.render(input_values[key], True, (0,0,0))
+        text_x = rect.x + 5
+        text_y = rect.y + (rect.height - text_surface.get_height()) // 2
+        screen.blit(text_surface, (text_x, text_y))
+
+    if not isEditing:
+        # ----------------- PARA CADA VEÍCULO -----------------
+        vehicle_info = []
+        for v in range(NUM_VEHICLES):
+            population = vehicle_populations[v]
+
+            population_fitness = [
+                calculate_fitness(
+                    ind, cities_locations, vias_proibidas, postos_abastecimento
+                )
+                for ind in population
+            ]
+            population, population_fitness = sort_population(population, population_fitness)
+
+            best_fitness = calculate_fitness(
+                population[0], cities_locations, vias_proibidas, postos_abastecimento
             )
-            for ind in population
-        ]
-        population, population_fitness = sort_population(population, population_fitness)
+            best_solution = population[0]
 
-        best_fitness = calculate_fitness(
-            population[0], cities_locations, vias_proibidas, postos_abastecimento
-        )
-        best_solution = population[0]
+            if (
+                len(vehicle_best_solutions[v]) == 0
+                or vehicle_best_solutions[v][-1] != best_solution
+            ):
+                vehicle_last_change[v] = generation
 
-        if (
-            len(vehicle_best_solutions[v]) == 0
-            or vehicle_best_solutions[v][-1] != best_solution
-        ):
-            vehicle_last_change[v] = generation
+            vehicle_best_fitness[v].append(best_fitness)
+            vehicle_best_solutions[v].append(best_solution)
+            num_cities = len(best_solution) - 2
+            vehicle_info.append((v, best_fitness, num_cities, vehicle_last_change[v]))
 
-        vehicle_best_fitness[v].append(best_fitness)
-        vehicle_best_solutions[v].append(best_solution)
-        num_cities = len(best_solution) - 2
-        vehicle_info.append((v, best_fitness, num_cities, vehicle_last_change[v]))
-
-        draw_paths(
-            screen,
-            best_solution,
-            VEHICLE_COLORS[v],
-            width=3,
-            vias_proibidas=vias_proibidas if restricao_via_proibida else [],
-            cities_locations=cities_locations,
-            postos_abastecimento=postos_abastecimento,
-        )
-
-        draw_cities(
-            screen,
-            vehicle_clusters[v],
-            VEHICLE_COLORS[v],
-            NODE_RADIUS,
-            depot,
-            cidades_prioritarias,
-            postos_abastecimento,
-        )
-
-        # Evolução da população
-        new_population = [population[0]]
-        while len(new_population) < POPULATION_SIZE:
-            parent1 = tournament_selection(
-                population, population_fitness, tournament_size=5
+            draw_paths(
+                screen,
+                best_solution,
+                VEHICLE_COLORS[v],
+                width=3,
+                vias_proibidas=vias_proibidas if restricao_via_proibida else [],
+                cities_locations=cities_locations,
+                postos_abastecimento=postos_abastecimento,
             )
-            parent2 = tournament_selection(
-                population, population_fitness, tournament_size=5
+
+            draw_cities(
+                screen,
+                vehicle_clusters[v],
+                VEHICLE_COLORS[v],
+                NODE_RADIUS,
+                depot,
+                cidades_prioritarias,
+                postos_abastecimento,
             )
-            child1, child2 = order_crossover(parent1, parent2)
-            child1 = mutate(child1, MUTATION_PROBABILITY)
-            child2 = mutate(child2, MUTATION_PROBABILITY)
 
-            if restricao_cidade_prioritaria:
-                child1 = aplicar_cidade_prioritaria(child1, cidades_prioritarias)
-                child2 = aplicar_cidade_prioritaria(child2, cidades_prioritarias)
+            # Evolução da população
+            new_population = [population[0]]
+            while len(new_population) < POPULATION_SIZE:
+                parent1 = tournament_selection(
+                    population, population_fitness, tournament_size=5
+                )
+                parent2 = tournament_selection(
+                    population, population_fitness, tournament_size=5
+                )
+                child1, child2 = order_crossover(parent1, parent2)
+                child1 = mutate(child1, MUTATION_PROBABILITY)
+                child2 = mutate(child2, MUTATION_PROBABILITY)
 
-            new_population.append(child1)
-            if len(new_population) < POPULATION_SIZE:
-                new_population.append(child2)
-        vehicle_populations[v] = new_population
+                if restricao_cidade_prioritaria:
+                    child1 = aplicar_cidade_prioritaria(child1, cidades_prioritarias)
+                    child2 = aplicar_cidade_prioritaria(child2, cidades_prioritarias)
+
+                new_population.append(child1)
+                if len(new_population) < POPULATION_SIZE:
+                    new_population.append(child2)
+            vehicle_populations[v] = new_population
 
     # ----------------- DESENHAR GRÁFICO -----------------
     plt_fig, plt_ax = plt.subplots(figsize=(5, 4), dpi=100)
@@ -378,7 +483,7 @@ while running:
     col_widths = [150, 120, 150, 80]
     row_height = 35
     headers = ["Veículo", "Distância", "Cidades", "Geração"]
-    veiculos = ["Veículo 1", "Veículo 2", "Veículo 3", "Veículo 4"]
+    veiculos = ["Veículo 1", "Veículo 2", "Veículo 3", "Veículo 4","Veículo 5"]
 
     # Cabeçalho
     for col, header in enumerate(headers):
