@@ -32,6 +32,7 @@ from genetic_algorithm import (
     sort_population,
     tournament_selection,
 )
+from llm_integration import get_llmSolution
 
 # ------------------------- CONSTANTES -------------------------
 SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 650
@@ -276,6 +277,7 @@ while running:
 
     # ----------------- PARA CADA VEÍCULO -----------------
     vehicle_info = []
+    best_solution = None
     for v in range(NUM_VEHICLES):
         population = vehicle_populations[v]
 
@@ -445,5 +447,6 @@ while running:
     pygame.display.flip()
     clock.tick(FPS)
 
+# get_llmSolution(best_solution)
 pygame.quit()
 sys.exit()
