@@ -12,6 +12,7 @@ TSP Solver com múltiplos veículos usando GA
 
 import itertools
 import sys
+import random
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,10 +21,12 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from pygame.locals import *
 from sklearn.cluster import KMeans
 
+from city import City
 from benchmark_att48 import *
 from draw_functions import draw_cities, draw_paths
 from genetic_algorithm import (
     calculate_distance,
+    create_distance_matrix,
     calculate_fitness,
     generate_random_population,
     mutate,
@@ -32,6 +35,21 @@ from genetic_algorithm import (
     sort_population,
     tournament_selection,
 )
+
+# ------------------------- NOMES DE CIDADES -------------------------
+CITY_NAMES = [
+    "Chicago", "New York", "Los Angeles", "Toronto", "Vancouver", "Mexico City",
+    "London", "Paris", "Berlin", "Madrid", "Rome", "Moscow", "Istanbul",
+    "Tokyo", "Beijing", "Shanghai", "Seoul", "Sydney", "Melbourne",
+    "Cairo", "Johannesburg", "Lagos", "Nairobi",
+    "Rio de Janeiro", "Sao Paulo", "Buenos Aires", "Lima", "Bogota",
+    "Mumbai", "Delhi", "Bangkok", "Singapore", "Jakarta", "Kuala Lumpur",
+    "San Francisco", "Boston", "Miami", "Houston", "Dallas", "Atlanta",
+    "Seattle", "Denver", "Phoenix", "Philadelphia", "Washington",
+    "Montreal", "Calgary", "Ottawa", "Edmonton"
+]
+# Garante que a lista de nomes seja embaralhada para cada execução
+random.shuffle(CITY_NAMES)
 
 # ------------------------- CONSTANTES -------------------------
 SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 650
@@ -42,6 +60,11 @@ POPULATION_SIZE = 100
 MUTATION_PROBABILITY = 0.5
 NUM_VEHICLES = 4
 VEHICLE_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0)]
+# Limites de distância editáveis para cada veículo
+VEHICLE_DISTANCE_LIMITS = [2500, 2200, 2800, 2400]
+MIN_DISTANCE_LIMIT = 100
+MAX_DISTANCE_LIMIT = 5000
+DISTANCE_LIMIT_STEP = 100
 MARGIN = 50
 PROHIBITED_PENALTY = 1e6
 MAX_DISTANCE = 900
@@ -54,19 +77,19 @@ TABLE_HEIGHT = 200
 # ------------------------- RESTRIÇÕES -------------------------
 checkboxes = [
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 20, 20, 20),
+        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 70, GRAPH_HEIGHT + 20, 20, 20),
         "text": "Via proibida",
         "value": lambda: restricao_via_proibida,
         "set": lambda val: set_restricao("vias", val),
     },
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 50, 20, 20),
+        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 70, GRAPH_HEIGHT + 50, 20, 20),
         "text": "Cidade prioritária",
         "value": lambda: restricao_cidade_prioritaria,
         "set": lambda val: set_restricao("prioridade", val),
     },
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 80, 20, 20),
+        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 70, GRAPH_HEIGHT + 80, 20, 20),
         "text": "Parada para Abastecer",
         "value": lambda: restricao_abastecimento,
         "set": lambda val: set_restricao("max", val),
@@ -95,20 +118,26 @@ def set_cidadesPrioritarias():
     global cidades_prioritarias
     cidades_prioritarias = []
     if restricao_cidade_prioritaria:
-        cidades_prioritarias = [(944, 389), (674, 342), (900, 174), (1120, 387)]
-        cidades_prioritarias = [tuple(c) for c in cidades_prioritarias]
+        raw_coords = [(944, 389), (674, 342), (900, 174), (1120, 387)]
+        # Tenta encontrar cidades existentes nessas coordenadas, senão cria novas
+        cidades_prioritarias = []
+        for coords in raw_coords:
+            found = next((city for city in cities_locations if city.get_coords() == coords), None)
+            if found:
+                cidades_prioritarias.append(found)
 
 
 def set_viaProibida():
     global vias_proibidas
     vias_proibidas = []
     if restricao_via_proibida:
-        vias_proibidas = [
-            ((814, 344), (877, 291)),
-            ((779, 252), (784, 221)),
-            ((1013, 165), (1014, 119)),
-            ((1100, 443), (1108, 519)),
-        ]
+        raw_edges = [((814, 344), (877, 291)), ((779, 252), (784, 221))]
+        vias_proibidas = []
+        for start_coords, end_coords in raw_edges:
+            start_city = next((c for c in cities_locations if c.get_coords() == start_coords), None)
+            end_city = next((c for c in cities_locations if c.get_coords() == end_coords), None)
+            if start_city and end_city:
+                vias_proibidas.append((start_city, end_city))
 
 
 def inserir_paradas(route, postos, alcance_maximo):
@@ -140,8 +169,8 @@ def set_PostosAbastecimento():
     global postos_abastecimento
     postos_abastecimento = []
     if restricao_abastecimento:
-        postos_abastecimento = [(710, 150), (840, 370), (1010, 220), (1060, 430)]
-        postos_abastecimento = [tuple(c) for c in postos_abastecimento]
+        raw_postos = [(710, 150), (840, 370), (1010, 220), (1060, 430)]
+        postos_abastecimento = [City(name=f"Posto{i+1}", x=p[0], y=p[1]) for i, p in enumerate(raw_postos)]
 
 
 def set_restricao(tipo, val):
@@ -155,9 +184,91 @@ def set_restricao(tipo, val):
     reiniciar_GA()  # reinicia apenas populações e histórico
 
 
+def create_initial_population_for_vehicle(cluster):
+    """Cria uma população inicial para um único cluster de veículo."""
+    population = []
+    # Heurísticas iniciais
+    # Limita o número de heurísticas para não demorar muito se o cluster for grande
+    num_heuristic_seeds = min(len(cluster) - 2, 20)
+    if num_heuristic_seeds > 0:
+        # Usa uma amostra de cidades como semente para a heurística
+        start_indices = random.sample(range(1, len(cluster) - 1), num_heuristic_seeds)
+        for i in start_indices:
+            sol = nearest_neighbor_heuristic(cluster, i)
+            if restricao_cidade_prioritaria:
+                sol = aplicar_cidade_prioritaria(sol, cidades_prioritarias)
+            population.append(sol)
+
+    # População aleatória restante
+    remaining_size = POPULATION_SIZE - len(population)
+    if remaining_size > 0:
+        random_population = generate_random_population(cluster, remaining_size)
+        if restricao_cidade_prioritaria:
+            random_population = [aplicar_cidade_prioritaria(p, cidades_prioritarias) for p in random_population]
+        population.extend(random_population)
+
+    return population
+
+
+def rebalance_clusters(vehicle_clusters, distance_limits, depot, dist_matrix, city_to_idx):
+    """
+    Rebalanceia os clusters para tentar garantir que as rotas iniciais
+    sejam factíveis dentro dos limites de distância dos veículos.
+    """
+    print("Iniciando rebalanceamento de clusters...")
+    MAX_REBALANCE_ITERATIONS = 10
+    rebalanced = True
+    iterations = 0
+
+    while rebalanced and iterations < MAX_REBALANCE_ITERATIONS:
+        rebalanced = False
+        iterations += 1
+
+        # Estima a carga atual de cada veículo
+        estimated_distances = []
+        for i, cluster in enumerate(vehicle_clusters):
+            if len(cluster) > 2: # Pelo menos uma cidade além do depósito
+                # Usa uma heurística rápida para estimar a distância
+                heuristic_route = nearest_neighbor_heuristic(cluster, 1)
+                dist = calculate_fitness(heuristic_route, dist_matrix, city_to_idx)
+                estimated_distances.append(dist)
+            else:
+                estimated_distances.append(0)
+
+        # Encontra o veículo mais sobrecarregado
+        overload = [(est - limit, i) for i, (est, limit) in enumerate(zip(estimated_distances, distance_limits))]
+        overload.sort(key=lambda x: x[0], reverse=True)
+
+        if overload[0][0] > 0: # Se o mais sobrecarregado ainda estiver acima do limite
+            rebalanced = True
+            overloaded_idx = overload[0][1]
+            overloaded_cluster = vehicle_clusters[overloaded_idx]
+
+            # Encontra a cidade a ser movida (a mais distante do depósito, por exemplo)
+            cities_only = [c for c in overloaded_cluster if c != depot]
+            if not cities_only: continue
+
+            city_to_move = max(cities_only, key=lambda c: dist_matrix[city_to_idx[depot], city_to_idx[c]])
+
+            # Encontra o veículo com mais folga para receber a cidade
+            slack = [(limit - est, i) for i, (est, limit) in enumerate(zip(estimated_distances, distance_limits))]
+            slack.sort(key=lambda x: x[0], reverse=True)
+            
+            # Garante que não seja o mesmo veículo
+            target_idx = slack[0][1] if slack[0][1] != overloaded_idx else slack[1][1]
+
+            # Move a cidade
+            if city_to_move in vehicle_clusters[overloaded_idx]:
+                vehicle_clusters[overloaded_idx].remove(city_to_move)
+                vehicle_clusters[target_idx].insert(-1, city_to_move) # Insere antes do último depósito
+                print(f"Rebalanceando: Movendo '{city_to_move.name}' do Veículo {v+1} para o Veículo {target_idx+1}")
+
+    return vehicle_clusters
+
+
 # ------------------------- PREPARAR CIDADES -------------------------
 def prepare_cities():
-    global cities_locations, vehicle_clusters, vehicle_populations, depot
+    global cities_locations, vehicle_clusters, vehicle_populations, depot, distance_matrix, city_to_index
 
     att_cities_locations = np.array(att_48_cities_locations)
     max_x = max(point[0] for point in att_cities_locations)
@@ -167,20 +278,26 @@ def prepare_cities():
     scale_y = (SCREEN_HEIGHT - MARGIN * 2 - NODE_RADIUS) / max_y
 
     cities_locations = [
-        (
-            int(point[0] * scale_x + LEFT_PANEL_WIDTH + MARGIN),
-            int(point[1] * scale_y + MARGIN),
+        City(
+            name=CITY_NAMES[i] if i < len(CITY_NAMES) else f"C{i+1}",
+            x=int(point[0] * scale_x + LEFT_PANEL_WIDTH + MARGIN),
+            y=int(point[1] * scale_y + MARGIN),
         )
-        for point in att_cities_locations
+        for i, point in enumerate(att_cities_locations)
     ]
 
-    depot_x = int(np.mean([x for x, y in cities_locations]))
-    depot_y = int(np.mean([y for x, y in cities_locations]))
-    depot = (depot_x, depot_y)
+    # Converte para array NumPy para cálculos eficientes
+    cities_coords_array = np.array([city.get_coords() for city in cities_locations])
+    # Calcula o centroide (ponto médio) de todas as cidades para definir o depósito.
+    depot_coords = tuple(np.mean(cities_coords_array, axis=0).astype(int))
+    depot = City(name="Depot", x=depot_coords[0], y=depot_coords[1])
 
-    cities_array = np.array(cities_locations)
+    # Cria a matriz de distância para otimização (agora que o depot existe)
+    all_cities_for_matrix = [depot] + cities_locations
+    distance_matrix, city_to_index = create_distance_matrix(all_cities_for_matrix)
+
     kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=42)
-    kmeans.fit(cities_array)
+    kmeans.fit(cities_coords_array)
     labels = kmeans.labels_
 
     vehicle_clusters = [[] for _ in range(NUM_VEHICLES)]
@@ -191,24 +308,7 @@ def prepare_cities():
 
     vehicle_populations = []
     for cluster in vehicle_clusters:
-        population = []
-        # Heurísticas iniciais
-        for i in range(1, len(cluster) - 1):
-            sol = nearest_neighbor_heuristic(cluster, i)
-            if restricao_cidade_prioritaria:
-                sol = aplicar_cidade_prioritaria(sol, cidades_prioritarias)
-            population.append(sol)
-        # População aleatória restante
-        random_population = generate_random_population(
-            cluster, POPULATION_SIZE - len(population)
-        )
-        if restricao_cidade_prioritaria:
-            random_population = [
-                aplicar_cidade_prioritaria(p, cidades_prioritarias)
-                for p in random_population
-            ]
-        population.extend(random_population)
-        vehicle_populations.append(population)
+        vehicle_populations.append(create_initial_population_for_vehicle(cluster))
 
 
 # ------------------------- PYGAME -------------------------
@@ -220,7 +320,7 @@ clock = pygame.time.Clock()
 
 # ------------------------- FUNÇÃO PARA REINICIAR POPULAÇÃO -------------------------
 def reiniciar_GA():
-    global vehicle_best_fitness, vehicle_best_solutions, vehicle_last_change, generation_counter
+    global vehicle_best_fitness, vehicle_best_solutions, vehicle_last_change, generation_counter, distance_matrix, city_to_index
     vehicle_best_fitness = [[] for _ in range(NUM_VEHICLES)]
     vehicle_best_solutions = [[] for _ in range(NUM_VEHICLES)]
     vehicle_last_change = [0] * NUM_VEHICLES
@@ -228,13 +328,41 @@ def reiniciar_GA():
     set_viaProibida()
     set_cidadesPrioritarias()
     set_PostosAbastecimento()
+    distance_matrix = None
+    city_to_index = None
     prepare_cities()
+    # Rebalanceia os clusters com base nos limites de distância
+    global vehicle_clusters
+    vehicle_clusters = rebalance_clusters(vehicle_clusters, VEHICLE_DISTANCE_LIMITS, depot, distance_matrix, city_to_index)
+
+
+def rebalance_and_reset_all():
+    """
+    Rebalanceia os clusters com base nos limites atuais e reinicia as populações
+    e o histórico de todos os veículos.
+    """
+    global vehicle_clusters, vehicle_populations, vehicle_best_fitness, vehicle_best_solutions, vehicle_last_change, generation_counter
+    
+    print("Rebalanceamento global acionado por mudança de limite.")
+    
+    # 1. Rebalanceia os clusters com os novos limites
+    vehicle_clusters = rebalance_clusters(vehicle_clusters, VEHICLE_DISTANCE_LIMITS, depot, distance_matrix, city_to_index)
+    
+    # 2. Cria novas populações para os clusters rebalanceados
+    vehicle_populations = [create_initial_population_for_vehicle(c) for c in vehicle_clusters]
+    
+    # 3. Reseta o histórico de otimização de todos os veículos
+    vehicle_best_fitness = [[] for _ in range(NUM_VEHICLES)]
+    vehicle_best_solutions = [[] for _ in range(NUM_VEHICLES)]
+    vehicle_last_change = [0] * NUM_VEHICLES
+    generation_counter = itertools.count(start=1)
 
 
 # ------------------------- LOOP PRINCIPAL -------------------------
 
 reiniciar_GA()
 
+spinner_buttons = [] # Armazenará os rects dos botões +/-
 running = True
 while running:
     for event in pygame.event.get():
@@ -246,6 +374,18 @@ while running:
             for cb in checkboxes:
                 if cb["rect"].collidepoint(event.pos):
                     cb["set"](not cb["value"]())
+            # Lógica para os botões de ajuste de limite
+            for button in spinner_buttons:
+                if button['rect'].collidepoint(event.pos):
+                    v_idx = button['vehicle_idx']
+                    current_limit = VEHICLE_DISTANCE_LIMITS[v_idx]
+                    if button['type'] == '+':
+                        new_limit = min(MAX_DISTANCE_LIMIT, current_limit + DISTANCE_LIMIT_STEP)
+                    else: # type == '-'
+                        new_limit = max(MIN_DISTANCE_LIMIT, current_limit - DISTANCE_LIMIT_STEP)
+                    VEHICLE_DISTANCE_LIMITS[v_idx] = new_limit
+                    rebalance_and_reset_all() # Aciona o rebalanceamento global
+                    break # Evita processar outros botões no mesmo clique
 
     generation = next(generation_counter)
     screen.fill((255, 255, 255))
@@ -281,14 +421,24 @@ while running:
 
         population_fitness = [
             calculate_fitness(
-                ind, cities_locations, vias_proibidas, postos_abastecimento
+                ind,
+                distance_matrix,
+                city_to_index,
+                VEHICLE_DISTANCE_LIMITS[v],
+                vias_proibidas,
+                postos_abastecimento,
             )
             for ind in population
         ]
         population, population_fitness = sort_population(population, population_fitness)
 
         best_fitness = calculate_fitness(
-            population[0], cities_locations, vias_proibidas, postos_abastecimento
+            population[0],
+            distance_matrix,
+            city_to_index,
+            VEHICLE_DISTANCE_LIMITS[v],
+            vias_proibidas,
+            postos_abastecimento,
         )
         best_solution = population[0]
 
@@ -300,7 +450,7 @@ while running:
 
         vehicle_best_fitness[v].append(best_fitness)
         vehicle_best_solutions[v].append(best_solution)
-        num_cities = len(best_solution) - 2
+        num_cities = len(set(best_solution) - {depot})
         vehicle_info.append((v, best_fitness, num_cities, vehicle_last_change[v]))
 
         draw_paths(
@@ -375,10 +525,11 @@ while running:
     vehicle_info.sort(key=lambda x: x[1])
     font = pygame.font.SysFont("Arial", 20)
     start_x, start_y = 10, GRAPH_HEIGHT + 20
-    col_widths = [150, 120, 150, 80]
+    col_widths = [150, 120, 100, 100, 80]
     row_height = 35
-    headers = ["Veículo", "Distância", "Cidades", "Geração"]
+    headers = ["Veículo", "Distância", "Limite", "Cidades", "Geração"]
     veiculos = ["Veículo 1", "Veículo 2", "Veículo 3", "Veículo 4"]
+    spinner_buttons.clear() # Limpa os botões da iteração anterior
 
     # Cabeçalho
     for col, header in enumerate(headers):
@@ -393,8 +544,9 @@ while running:
 
     # Linhas da tabela (veículos)
     for row, info in enumerate(vehicle_info):
-        v, dist, num_cities, last_change = info
-        values = [v, str(round(dist)), str(num_cities - 1), str(last_change)]
+        v_idx, dist, num_cities, last_change = info
+        limit = VEHICLE_DISTANCE_LIMITS[v_idx]
+        values = [v_idx, str(round(dist)), str(limit), str(num_cities), str(last_change)]
         for col, val in enumerate(values):
             x = start_x + sum(col_widths[:col])
             y = start_y + row * row_height
@@ -404,7 +556,7 @@ while running:
 
             # Desenhar círculo colorido na primeira coluna
             if col == 0:
-                text_surface = font.render(veiculos[val], True, (0, 0, 0))
+                text_surface = font.render(veiculos[int(val)], True, (0, 0, 0))
                 screen.blit(text_surface, (x + 40, y + 5))
                 # Risco menor e centralizado na célula
                 line_length = 20  # tamanho fixo igual à legenda do gráfico
@@ -413,18 +565,35 @@ while running:
                 line_y = y + row_height // 2
                 pygame.draw.line(
                     screen,
-                    VEHICLE_COLORS[v],
+                    VEHICLE_COLORS[v_idx],
                     (line_x_start, line_y),
                     (line_x_end, line_y),
                     4,
                 )
+            elif headers[col] == "Limite":
+                # Desenha o valor e os botões +/-
+                text_surface = font.render(val, True, (0, 0, 0))
+                screen.blit(text_surface, (x + 5, y + 5))
+
+                button_w, button_h = 20, row_height - 10
+                minus_rect = pygame.Rect(x + col_widths[col] - button_w * 2 - 5, y + 5, button_w, button_h)
+                plus_rect = pygame.Rect(x + col_widths[col] - button_w - 5, y + 5, button_w, button_h)
+
+                pygame.draw.rect(screen, (200, 200, 200), minus_rect)
+                pygame.draw.rect(screen, (200, 200, 200), plus_rect)
+                screen.blit(font.render("-", True, (0,0,0)), (minus_rect.x + 6, minus_rect.y - 2))
+                screen.blit(font.render("+", True, (0,0,0)), (plus_rect.x + 5, plus_rect.y - 2))
+
+                spinner_buttons.append({'rect': minus_rect, 'type': '-', 'vehicle_idx': v_idx})
+                spinner_buttons.append({'rect': plus_rect, 'type': '+', 'vehicle_idx': v_idx})
+
             else:
                 text_surface = font.render(val, True, (0, 0, 0))
                 screen.blit(text_surface, (x + 5, y + 5))
 
     # ----------------- LINHA DE TOTALIZADORES -----------------
     total_dist = sum(info[1] for info in vehicle_info)
-    total_cities = sum(info[2] - 1 for info in vehicle_info)  # subtrair depósito
+    total_cities = sum(info[2] for info in vehicle_info)
 
     y = start_y + len(vehicle_info) * row_height
     pygame.draw.rect(
@@ -434,7 +603,7 @@ while running:
         screen, (0, 0, 0), (start_x, y, sum(col_widths), row_height), 2
     )  # borda
 
-    total_values = ["Total", str(round(total_dist)), str(total_cities), ""]
+    total_values = ["Total", str(round(total_dist)), "", str(total_cities), ""]
     for col, val in enumerate(total_values):
         x = start_x + sum(col_widths[:col])
         pygame.draw.rect(screen, (200, 200, 200), (x, y, col_widths[col], row_height))
