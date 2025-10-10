@@ -10,9 +10,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pygame
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from city import City
 
 from constants import MAX_DISTANCE
 from genetic_algorithm import calculate_distance
+
+FUEL_STATION_COLOR = (0, 180, 0) # Verde vibrante para postos e desvios
 
 
 def draw_button(screen, rect, text, color_bg, color_text=(255, 255, 255)):
@@ -60,12 +63,12 @@ def draw_plot(
 
 def draw_cities(
     screen: pygame.Surface,
-    cities_locations: List[Tuple[int, int]],
+    cities_in_cluster: List[City],
     rgb_color: Tuple[int, int, int],
     node_radius: int,
-    depot: Tuple[int, int] = None,
-    cidades_prioritarias: List[Tuple[int, int]] = [],
-    postos: List[Tuple[int, int]] = [],
+    depot: City = None,
+    cidades_prioritarias: List[City] = [],
+    postos: List[City] = [],
 ) -> None:
     """
     Draws circles representing cities on the given Pygame screen.
@@ -82,27 +85,32 @@ def draw_cities(
     # for city_location in cities_locations:
     #    color = (0, 0, 0) if depot is not None and city_location == depot else rgb_color
     #    pygame.draw.circle(screen, color, city_location, node_radius)
-
+    font = pygame.font.SysFont("Arial", 12)
     tamanho = node_radius * 2
     for posto in postos:
-        x, y = posto
+        x, y = posto.get_coords()
         rect = pygame.Rect(x - tamanho // 2, y - tamanho // 2, tamanho, tamanho)
-        pygame.draw.rect(screen, (0, 100, 0), rect)  # preenchimento
+        pygame.draw.rect(screen, FUEL_STATION_COLOR, rect)  # preenchimento
         pygame.draw.rect(screen, (0, 0, 0), rect, 2)
 
-    for city_location in cities_locations:
-        if depot is not None and city_location == depot:
+    for city in cities_in_cluster:
+        city_coords = city.get_coords()
+        if depot is not None and city == depot:
             color = (0, 0, 0)
-        elif city_location in cidades_prioritarias:
+        elif city in cidades_prioritarias:
             color = (128, 0, 128)  # roxo
         else:
             color = rgb_color
-        pygame.draw.circle(screen, color, city_location, node_radius)
+        pygame.draw.circle(screen, color, city_coords, node_radius)
+
+        # Desenha o nome da cidade
+        text_surface = font.render(city.name, True, (0, 0, 0))
+        screen.blit(text_surface, (city_coords[0] + node_radius, city_coords[1] - node_radius))
 
 
 def draw_paths(
     screen: pygame.Surface,
-    path: List[Tuple[int, int]],
+    path: List[City],
     rgb_color: Tuple[int, int, int],
     width: int = 1,
     vias_proibidas: List[Tuple[int, int]] = None,
@@ -116,12 +124,12 @@ def draw_paths(
     """
 
     for start, end in vias_proibidas:
-        pygame.draw.line(screen, (128, 0, 128), start, end, width=3)
+        pygame.draw.line(screen, (128, 0, 128), start.get_coords(), end.get_coords(), width=3)
 
     since_last_refuel = 0
     for i in range(len(path) - 1):
-        start = path[i]
-        end = path[i + 1]
+        start_city = path[i]
+        end_city = path[i + 1]
         color = rgb_color
         d = calculate_distance(start, end, cities_locations, vias_proibidas)
         since_last_refuel += d
@@ -132,14 +140,14 @@ def draw_paths(
                 key=lambda p: calculate_distance(start, p, cities_locations),
             )
             pygame.draw.line(
-                screen, (0, 128, 128), start, posto, 2
+                screen, FUEL_STATION_COLOR, start_city.get_coords(), posto.get_coords(), 2
             )  # linha até o posto
             pygame.draw.line(
-                screen, (0, 128, 128), posto, end, 2
+                screen, FUEL_STATION_COLOR, posto.get_coords(), end_city.get_coords(), 2
             )  # linha de volta à rota
             since_last_refuel = 0
         else:
-            pygame.draw.line(screen, color, start, end, width)
+            pygame.draw.line(screen, color, start_city.get_coords(), end_city.get_coords(), width)
 
 
 def draw_text(

@@ -7,10 +7,14 @@ Core genetic algorithm operations: fitness calculation, selection, crossover, mu
 
 import copy
 import math
+import numpy as np
 import random
+from typing import List, Protocol, Tuple, Dict, Optional
+
+from city import City
 from typing import Dict, List, Tuple
 
-_fitness_cache: Dict[Tuple[Tuple[float, float], ...], float] = {}
+_fitness_cache: Dict[Tuple[City, ...], float] = {}
 _cache_hits: int = 0
 _cache_misses: int = 0
 _cache_enabled: bool = True
@@ -69,27 +73,39 @@ def get_cache_stats() -> Dict[str, any]:
     }
 
 
+def create_distance_matrix(cities: list[City]) -> tuple[np.ndarray, dict[City, int]]:
+    """Cria uma matriz de distância e um mapa de cidade para índice."""
+    n = len(cities)
+    dist_matrix = np.zeros((n, n))
+    city_to_index = {city: i for i, city in enumerate(cities)}
+
+    for i in range(n):
+        for j in range(i, n):
+            dist = calculate_distance(cities[i], cities[j])
+            dist_matrix[i][j] = dist
+            dist_matrix[j][i] = dist
+
+    return dist_matrix, city_to_index
+
+
 def calculate_distance(
-    point1: Tuple[float, float],
-    point2: Tuple[float, float],
-    cities_location=None,
-    vias_proibidas=None,
+    p1: City, p2: City, cities_location=None, vias_proibidas=None
 ) -> float:
     """
     Distância entre dois pontos.
     Usa matriz de distâncias se disponível, senão calcula Euclidiana.
     """
-    if _distance_matrix is not None:
-        return _distance_matrix.get_distance(point1, point2)
-
-    return math.hypot(point1[0] - point2[0], point1[1] - point2[1])
+    p1_coords, p2_coords = p1.get_coords(), p2.get_coords()
+    return math.hypot(p1_coords[0] - p2_coords[0], p1_coords[1] - p2_coords[1])
 
 
 def calculate_fitness(
-    path: List[Tuple[float, float]],
-    cities_location=None,
+    path: List[City],
+    distance_matrix: np.ndarray = None,
+    city_to_index: dict = None,
+    distance_limit: float = None,
     vias_proibidas=None,
-    postos: List[Tuple[float, float]] = None,
+    postos: List[City] = None,
 ) -> float:
     """
     Calcula fitness como soma das distâncias da rota.
@@ -121,45 +137,51 @@ def calculate_fitness(
 
     distance = 0.0
     since_last_refuel = 0.0
-    n = len(path)
     visited = set()
 
-    for i in range(n):
+    for i in range(len(path) - 1):
         a = path[i]
-        b = path[(i + 1) % n]
+        b = path[i + 1]
 
-        d = calculate_distance(a, b, cities_location, vias_proibidas)
-        distance += d
-
-        if b in visited and b != path[0]:  # exclui depósito
-            fitness = 1000000.0  # penalidade grande
+        # Penaliza rotas que visitam a mesma cidade duas vezes (exceto o depósito no final)
+        if b in visited and b != path[-1]:
+            distance = 1_000_000.0 + (len(path) * 1000) # Penalidade grande
             if _cache_enabled:
-                _fitness_cache[route_key] = fitness
-            return fitness
-
+                _fitness_cache[cache_key] = distance
+            return distance
         visited.add(b)
 
-        if d < 1000000.0:
-            since_last_refuel += d
+        idx_a = city_to_index.get(a)
+        idx_b = city_to_index.get(b)
+
+        # Usa a matriz de distância se possível, senão calcula
+        if idx_a is not None and idx_b is not None:
+            d = distance_matrix[idx_a, idx_b]
+        else:
+            d = calculate_distance(a, b)
+
+        since_last_refuel += d
 
         # Se passou do limite, força parada no posto mais próximo
         if postos and since_last_refuel > 900:  # MAX_DISTANCE
-            posto_proximo = min(
-                postos,
-                key=lambda p: calculate_distance(a, p, cities_location, vias_proibidas),
-            )
-            d_posto = calculate_distance(
-                a, posto_proximo, cities_location, vias_proibidas
-            )
-            d_volta = calculate_distance(
-                posto_proximo, b, cities_location, vias_proibidas
-            )
-            distance += (
-                d_posto + d_volta
-            )  # adiciona caminho até o posto e de volta à rota
-            since_last_refuel = 0.0  # reseta contador
+            # Encontra o posto mais próximo do ponto atual (a)
+            posto_proximo = min(postos, key=lambda p: calculate_distance(a, p))
+            
+            # Calcula o custo do desvio: (a -> posto) + (posto -> b)
+            d_posto = calculate_distance(a, posto_proximo)
+            d_volta = calculate_distance(posto_proximo, b)
+            
+            # Adiciona a distância do desvio e subtrai a distância da rota original que foi substituída
+            distance += (d_posto + d_volta)
+            since_last_refuel = d_volta # A distância percorrida após abastecer é do posto até o próximo destino
+        else:
+            distance += d
 
-    # Armazena no cache
+    if distance_limit is not None and distance > distance_limit:
+        distance += (distance - distance_limit) * 10
+
+    # --- Fim do cálculo do Fitness ---
+
     if _cache_enabled:
         _fitness_cache[route_key] = distance
 
@@ -170,14 +192,14 @@ def calculate_fitness(
 
 
 def generate_random_population(
-    problem_or_cities, population_size: int
+    cities_in_cluster: List[City], population_size: int
 ) -> List[List[Tuple[float, float]]]:
     """
     Gera população aleatória de rotas.
     Mantém depósito fixo na primeira e última posição.
     """
     # Modo legado
-    cities = problem_or_cities
+    cities = cities_in_cluster
     depot = cities[0]
     cities = cities[1:-1]  # Exclui depósito para embaralhar
 
@@ -194,25 +216,19 @@ def generate_random_population(
 
 
 def nearest_neighbor_heuristic(
-    problem_or_cities,
+    cities_in_cluster: List[City],
     start_city_index: int = 1,
-    cities_compare=None,
-    vias_proibidas=None,
 ) -> List[Tuple[float, float]]:
     """
     Heurística vizinho mais próximo, mantendo depósito fixo no início e fim.
     """
-    # Modo legado
-    cities = problem_or_cities
+    cities = cities_in_cluster
     depot = cities[0]
-    cities = cities  # usa cities_compare se fornecido
-    if cities_compare:
-        cities = cities_compare
 
     def calculate_dist(p1, p2):
-        return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+        return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
-    unvisited = cities[1:]  # exclui depósito
+    unvisited = cities[1:-1]  # exclui depósito do início e fim
     current_city = cities[start_city_index]
     route = [depot, current_city]
     unvisited.remove(current_city)
@@ -254,8 +270,8 @@ def tournament_selection(
 
 
 def order_crossover(
-    parent1: List[Tuple[float, float]], parent2: List[Tuple[float, float]]
-) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
+    parent1: List[City], parent2: List[City]
+) -> Tuple[List[City], List[City]]:
     """
     Order Crossover (OX) mantendo depósito fixo no início/fim.
     """
@@ -291,9 +307,7 @@ def order_crossover(
 # ------------------------- MUTATION -------------------------
 
 
-def mutate(
-    solution: List[Tuple[float, float]], mutation_probability: float
-) -> List[Tuple[float, float]]:
+def mutate(solution: List[City], mutation_probability: float) -> List[City]:
     """Mutação simples: swap, reverse ou 2-opt, mantendo depósito fixo."""
     mutated_solution = copy.deepcopy(solution)
     if random.random() < mutation_probability:
@@ -317,8 +331,8 @@ def mutate(
 
 
 def sort_population(
-    population: List[List[Tuple[float, float]]], fitness: List[float]
-) -> Tuple[List[List[Tuple[float, float]]], List[float]]:
+    population: List[List[City]], fitness: List[float]
+) -> Tuple[List[List[City]], List[float]]:
     """Ordena população por fitness (menor é melhor)."""
     combined = list(zip(population, fitness))
     combined.sort(key=lambda x: x[1])
