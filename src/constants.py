@@ -36,6 +36,9 @@ TABLE_HEIGHT = 200
 PROHIBITED_PENALTY = 1e6
 MAX_DISTANCE = 900
 
+# Performance optimization
+USE_DISTANCE_MATRIX = True
+
 # Checkbox positions (relative to left panel)
 CHECKBOX_OFFSET_X = 20
 CHECKBOX_OFFSET_Y_START = GRAPH_HEIGHT + 20

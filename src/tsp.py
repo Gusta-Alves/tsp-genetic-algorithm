@@ -12,6 +12,7 @@ TSP Solver com múltiplos veículos usando GA
 
 import itertools
 import sys
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,6 +40,12 @@ from constants import (
     SCREEN_WIDTH,
     VEHICLE_COLORS,
 )
+
+# Benchmark configuration
+MAX_GENERATIONS = 100
+last_total_dist = 0
+
+from distance_matrix import DistanceMatrix
 from draw_functions import draw_cities, draw_paths
 from genetic_algorithm import (
     calculate_distance,
@@ -47,6 +54,7 @@ from genetic_algorithm import (
     mutate,
     nearest_neighbor_heuristic,
     order_crossover,
+    set_distance_matrix,
     sort_population,
     tournament_selection,
 )
@@ -190,6 +198,10 @@ def prepare_cities():
     depot_y = int(np.mean([y for x, y in cities_locations]))
     depot = (depot_x, depot_y)
 
+    # Inicializar matriz de distância para otimização
+    distance_matrix = DistanceMatrix(cities_locations)
+    set_distance_matrix(distance_matrix)
+
     cities_array = np.array(cities_locations)
     kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=42)
     kmeans.fit(cities_array)
@@ -247,6 +259,7 @@ def reiniciar_GA():
 
 reiniciar_GA()
 
+start_time = time.time()
 running = True
 while running:
     for event in pygame.event.get():
@@ -260,6 +273,11 @@ while running:
                     cb["set"](not cb["value"]())
 
     generation = next(generation_counter)
+    # Stop after MAX_GENERATIONS
+    if generation > MAX_GENERATIONS:
+        running = False
+        break
+
     screen.fill((255, 255, 255))
 
     # ----------------- DESENHAR CHECKBOXES -----------------
@@ -436,6 +454,7 @@ while running:
 
     # ----------------- LINHA DE TOTALIZADORES -----------------
     total_dist = sum(info[1] for info in vehicle_info)
+    last_total_dist = total_dist
     total_cities = sum(info[2] - 1 for info in vehicle_info)  # subtrair depósito
 
     y = start_y + len(vehicle_info) * row_height
@@ -456,6 +475,11 @@ while running:
 
     pygame.display.flip()
     clock.tick(FPS)
+
+end_time = time.time()
+print(f"Benchmark concluído após {MAX_GENERATIONS} gerações.")
+print(f"Tempo total: {end_time - start_time:.2f} segundos")
+print(f"Fitness final (distância total): {last_total_dist:.2f}")
 
 pygame.quit()
 sys.exit()

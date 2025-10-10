@@ -10,12 +10,22 @@ import math
 import random
 from typing import Dict, List, Tuple
 
-from tsp_problem import TSPProblem
-
 _fitness_cache: Dict[Tuple[Tuple[float, float], ...], float] = {}
 _cache_hits: int = 0
 _cache_misses: int = 0
 _cache_enabled: bool = True
+_distance_matrix = None
+
+
+def set_distance_matrix(matrix):
+    """
+    Set global distance matrix for optimized distance calculations.
+
+    Args:
+        matrix: DistanceMatrix instance
+    """
+    global _distance_matrix
+    _distance_matrix = matrix
 
 
 def enable_fitness_cache(enabled: bool = True) -> None:
@@ -66,9 +76,12 @@ def calculate_distance(
     vias_proibidas=None,
 ) -> float:
     """
-    Distância Euclidiana entre dois pontos.
-    Função mantida para compatibilidade com código legado.
+    Distância entre dois pontos.
+    Usa matriz de distâncias se disponível, senão calcula Euclidiana.
     """
+    if _distance_matrix is not None:
+        return _distance_matrix.get_distance(point1, point2)
+
     return math.hypot(point1[0] - point2[0], point1[1] - point2[1])
 
 
@@ -153,25 +166,6 @@ def calculate_fitness(
     return distance
 
 
-class FitnessCalculator:
-    """Calculates fitness for TSP routes."""
-
-    def __init__(self, problem: TSPProblem):
-        self.problem = problem
-
-    def calculate_fitness(self, route: List[Tuple[float, float]]) -> float:
-        """
-        Calculate fitness of a route.
-
-        Args:
-            route: The route to evaluate
-
-        Returns:
-            Fitness value (lower is better)
-        """
-        return self.problem.calculate_route_distance(route)
-
-
 # ------------------------- POPULAÇÃO -------------------------
 
 
@@ -181,16 +175,11 @@ def generate_random_population(
     """
     Gera população aleatória de rotas.
     Mantém depósito fixo na primeira e última posição.
-    Suporta tanto TSPProblem quanto lista de cidades (para compatibilidade).
     """
-    if isinstance(problem_or_cities, TSPProblem):
-        depot = problem_or_cities.depot
-        cities = problem_or_cities.cities[1:-1]  # Exclui depósito para embaralhar
-    else:
-        # Modo legado
-        cities = problem_or_cities
-        depot = cities[0]
-        cities = cities[1:-1]  # Exclui depósito para embaralhar
+    # Modo legado
+    cities = problem_or_cities
+    depot = cities[0]
+    cities = cities[1:-1]  # Exclui depósito para embaralhar
 
     population = []
     for _ in range(population_size):
@@ -212,23 +201,16 @@ def nearest_neighbor_heuristic(
 ) -> List[Tuple[float, float]]:
     """
     Heurística vizinho mais próximo, mantendo depósito fixo no início e fim.
-    Suporta tanto TSPProblem quanto lista de cidades (para compatibilidade).
     """
-    if isinstance(problem_or_cities, TSPProblem):
-        problem = problem_or_cities
-        depot = problem.depot
-        cities = problem.cities
-        calculate_dist = problem.calculate_distance
-    else:
-        # Modo legado
-        cities = problem_or_cities
-        depot = cities[0]
-        cities = cities  # usa cities_compare se fornecido
-        if cities_compare:
-            cities = cities_compare
+    # Modo legado
+    cities = problem_or_cities
+    depot = cities[0]
+    cities = cities  # usa cities_compare se fornecido
+    if cities_compare:
+        cities = cities_compare
 
-        def calculate_dist(p1, p2):
-            return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+    def calculate_dist(p1, p2):
+        return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
 
     unvisited = cities[1:]  # exclui depósito
     current_city = cities[start_city_index]
