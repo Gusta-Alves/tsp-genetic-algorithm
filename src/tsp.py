@@ -13,6 +13,7 @@ TSP Solver com múltiplos veículos usando GA
 import itertools
 import sys
 import random
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,6 +24,30 @@ from sklearn.cluster import KMeans
 
 from city import City
 from benchmark_att48 import *
+from constants import (
+    CHECKBOX_OFFSET_X,
+    CHECKBOX_OFFSET_Y_START,
+    CHECKBOX_SPACING,
+    FPS,
+    GRAPH_HEIGHT,
+    LEFT_PANEL_WIDTH,
+    MARGIN,
+    MUTATION_PROBABILITY,
+    NODE_RADIUS,
+    NUM_VEHICLES,
+    POPULATION_SIZE,
+    PROHIBITED_PENALTY,
+    RIGHT_PANEL_WIDTH,
+    SCREEN_HEIGHT,
+    SCREEN_WIDTH,
+    VEHICLE_COLORS,
+)
+
+# Benchmark configuration
+MAX_GENERATIONS = 100
+last_total_dist = 0
+
+from distance_matrix import DistanceMatrix
 from draw_functions import draw_cities, draw_paths
 from genetic_algorithm import (
     calculate_distance,
@@ -32,6 +57,7 @@ from genetic_algorithm import (
     mutate,
     nearest_neighbor_heuristic,
     order_crossover,
+    set_distance_matrix,
     sort_population,
     tournament_selection,
 )
@@ -51,45 +77,34 @@ CITY_NAMES = [
 # Garante que a lista de nomes seja embaralhada para cada execução
 random.shuffle(CITY_NAMES)
 
-# ------------------------- CONSTANTES -------------------------
-SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 650
-NODE_RADIUS = 10
-FPS = 30
-
-POPULATION_SIZE = 100
-MUTATION_PROBABILITY = 0.5
-NUM_VEHICLES = 4
-VEHICLE_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0)]
-# Limites de distância editáveis para cada veículo
-VEHICLE_DISTANCE_LIMITS = [2500, 2200, 2800, 2400]
-MIN_DISTANCE_LIMIT = 100
-MAX_DISTANCE_LIMIT = 5000
-DISTANCE_LIMIT_STEP = 100
-MARGIN = 50
-PROHIBITED_PENALTY = 1e6
-MAX_DISTANCE = 900
-
-LEFT_PANEL_WIDTH = 500
-RIGHT_PANEL_WIDTH = SCREEN_WIDTH - LEFT_PANEL_WIDTH
-GRAPH_HEIGHT = 400
-TABLE_HEIGHT = 200
-
 # ------------------------- RESTRIÇÕES -------------------------
 checkboxes = [
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 70, GRAPH_HEIGHT + 20, 20, 20),
+        "rect": pygame.Rect(
+            LEFT_PANEL_WIDTH + 70 + CHECKBOX_OFFSET_X, CHECKBOX_OFFSET_Y_START, 20, 20
+        ),
         "text": "Via proibida",
         "value": lambda: restricao_via_proibida,
         "set": lambda val: set_restricao("vias", val),
     },
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 70, GRAPH_HEIGHT + 50, 20, 20),
+        "rect": pygame.Rect(
+            LEFT_PANEL_WIDTH + CHECKBOX_OFFSET_X,
+            CHECKBOX_OFFSET_Y_START + CHECKBOX_SPACING,
+            20,
+            20,
+        ),
         "text": "Cidade prioritária",
         "value": lambda: restricao_cidade_prioritaria,
         "set": lambda val: set_restricao("prioridade", val),
     },
     {
-        "rect": pygame.Rect(LEFT_PANEL_WIDTH + 70, GRAPH_HEIGHT + 80, 20, 20),
+        "rect": pygame.Rect(
+            LEFT_PANEL_WIDTH + CHECKBOX_OFFSET_X,
+            CHECKBOX_OFFSET_Y_START + 2 * CHECKBOX_SPACING,
+            20,
+            20,
+        ),
         "text": "Parada para Abastecer",
         "value": lambda: restricao_abastecimento,
         "set": lambda val: set_restricao("max", val),
@@ -296,6 +311,11 @@ def prepare_cities():
     all_cities_for_matrix = [depot] + cities_locations
     distance_matrix, city_to_index = create_distance_matrix(all_cities_for_matrix)
 
+    # Inicializar matriz de distância para otimização
+    distance_matrix = DistanceMatrix(cities_locations)
+    set_distance_matrix(distance_matrix)
+
+    cities_array = np.array(cities_locations)
     kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=42)
     kmeans.fit(cities_coords_array)
     labels = kmeans.labels_
@@ -363,6 +383,7 @@ def rebalance_and_reset_all():
 reiniciar_GA()
 
 spinner_buttons = [] # Armazenará os rects dos botões +/-
+start_time = time.time()
 running = True
 while running:
     for event in pygame.event.get():
@@ -388,6 +409,11 @@ while running:
                     break # Evita processar outros botões no mesmo clique
 
     generation = next(generation_counter)
+    # Stop after MAX_GENERATIONS
+    if generation > MAX_GENERATIONS:
+        running = False
+        break
+
     screen.fill((255, 255, 255))
 
     # ----------------- DESENHAR CHECKBOXES -----------------
@@ -593,7 +619,8 @@ while running:
 
     # ----------------- LINHA DE TOTALIZADORES -----------------
     total_dist = sum(info[1] for info in vehicle_info)
-    total_cities = sum(info[2] for info in vehicle_info)
+    last_total_dist = total_dist
+    total_cities = sum(info[2] - 1 for info in vehicle_info)  # subtrair depósito
 
     y = start_y + len(vehicle_info) * row_height
     pygame.draw.rect(
@@ -613,6 +640,11 @@ while running:
 
     pygame.display.flip()
     clock.tick(FPS)
+
+end_time = time.time()
+print(f"Benchmark concluído após {MAX_GENERATIONS} gerações.")
+print(f"Tempo total: {end_time - start_time:.2f} segundos")
+print(f"Fitness final (distância total): {last_total_dist:.2f}")
 
 pygame.quit()
 sys.exit()

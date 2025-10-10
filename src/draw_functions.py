@@ -6,20 +6,15 @@ Created on Fri Dec 22 16:03:11 2023
 """
 from typing import List, Tuple
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pygame
-import pylab
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from city import City
 
+from constants import MAX_DISTANCE
 from genetic_algorithm import calculate_distance
-from tsp_problem import TSPProblem
 
-matplotlib.use("Agg")
-
-MAX_DISTANCE = 900
 FUEL_STATION_COLOR = (0, 180, 0) # Verde vibrante para postos e desvios
 
 
@@ -118,7 +113,6 @@ def draw_paths(
     path: List[City],
     rgb_color: Tuple[int, int, int],
     width: int = 1,
-    problem: TSPProblem = None,
     vias_proibidas: List[Tuple[int, int]] = None,
     cities_locations: List[Tuple[int, int]] = None,
     postos_abastecimento: List[Tuple[int, int]] = None,
@@ -137,20 +131,14 @@ def draw_paths(
         start_city = path[i]
         end_city = path[i + 1]
         color = rgb_color
-        if problem:
-            d = problem.calculate_distance(start_city, end_city)
-        else:
-            d = calculate_distance(start_city, end_city, cities_locations, vias_proibidas)
+        d = calculate_distance(start, end, cities_locations, vias_proibidas)
         since_last_refuel += d
 
         if postos_abastecimento and since_last_refuel > MAX_DISTANCE:
-            if problem:
-                posto = problem.get_nearest_fuel_station(start_city)
-            else:
-                posto = min(
-                    postos_abastecimento,
-                    key=lambda p: calculate_distance(start_city, p, cities_locations),
-                )
+            posto = min(
+                postos_abastecimento,
+                key=lambda p: calculate_distance(start, p, cities_locations),
+            )
             pygame.draw.line(
                 screen, FUEL_STATION_COLOR, start_city.get_coords(), posto.get_coords(), 2
             )  # linha até o posto
