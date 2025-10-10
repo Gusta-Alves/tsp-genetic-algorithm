@@ -6,7 +6,7 @@ This module contains the core genetic algorithm engine that handles
 population evolution through selection, crossover, and mutation operations.
 """
 
-from typing import List, Tuple, Callable
+from typing import Callable, List, Tuple
 
 from genetic_algorithm import (
     mutate,
