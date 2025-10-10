@@ -65,6 +65,7 @@ from genetic_algorithm import (
     sort_population,
     tournament_selection,
 )
+from llm_integration import get_llmSolution
 
 # ------------------------- NOMES DE CIDADES -------------------------
 CITY_NAMES = [
@@ -320,7 +321,7 @@ def prepare_cities():
     set_distance_matrix(distance_matrix)
 
     # cities_array = np.array(cities_locations)
-    kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=42)
+    kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=72)
     kmeans.fit(cities_coords_array)
     labels = kmeans.labels_
 
@@ -447,6 +448,7 @@ while running:
 
     # ----------------- PARA CADA VEÍCULO -----------------
     vehicle_info = []
+    best_solution = None
     for v in range(NUM_VEHICLES):
         population = vehicle_populations[v]
 
@@ -650,6 +652,7 @@ end_time = time.time()
 print(f"Benchmark concluído após {MAX_GENERATIONS} gerações.")
 print(f"Tempo total: {end_time - start_time:.2f} segundos")
 print(f"Fitness final (distância total): {last_total_dist:.2f}")
+# get_llmSolution(best_solution)
 
 pygame.quit()
 sys.exit()
