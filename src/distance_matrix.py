@@ -9,9 +9,15 @@ distance calculations.
 """
 
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
+
+# Import City class
+try:
+    from .city import City
+except ImportError:
+    from city import City
 
 
 class DistanceMatrix:
@@ -21,19 +27,35 @@ class DistanceMatrix:
     This class builds and maintains an NxN matrix of Euclidean distances
     between all pairs of cities, enabling O(1) distance lookups instead
     of O(n) calculations during genetic algorithm execution.
+    
+    Supports both City objects and coordinate tuples.
     """
 
-    def __init__(self, cities: List[Tuple[float, float]]):
+    def __init__(self, cities: List[Union[City, Tuple[float, float]]]):
         """
         Initialize distance matrix with city coordinates.
 
         Args:
-            cities: List of (x, y) coordinate tuples
+            cities: List of City objects or (x, y) coordinate tuples
         """
         self.cities = cities
         self.n_cities = len(cities)
         self.matrix = self._build_matrix()
         self.city_to_index = {city: i for i, city in enumerate(cities)}
+
+    def _get_coords(self, city: Union[City, Tuple[float, float]]) -> Tuple[float, float]:
+        """
+        Extract coordinates from a City object or tuple.
+
+        Args:
+            city: City object or coordinate tuple
+
+        Returns:
+            (x, y) coordinate tuple
+        """
+        if isinstance(city, City):
+            return (city.x, city.y)
+        return city
 
     def _build_matrix(self) -> np.ndarray:
         """
@@ -50,24 +72,42 @@ class DistanceMatrix:
 
         for i in range(n):
             for j in range(i + 1, n):
+                # Extract coordinates from City objects or tuples
+                coords_i = self._get_coords(self.cities[i])
+                coords_j = self._get_coords(self.cities[j])
+                
                 dist = math.hypot(
-                    self.cities[i][0] - self.cities[j][0],
-                    self.cities[i][1] - self.cities[j][1],
+                    coords_i[0] - coords_j[0],
+                    coords_i[1] - coords_j[1],
                 )
                 matrix[i][j] = dist
                 matrix[j][i] = dist
 
         return matrix
 
+    def __getitem__(self, key):
+        """
+        Support subscript notation for accessing the distance matrix.
+        
+        This allows using distance_matrix[i, j] syntax like numpy arrays.
+
+        Args:
+            key: Either a single index or a tuple of (idx1, idx2)
+
+        Returns:
+            Distance value or row from the matrix
+        """
+        return self.matrix[key]
+
     def get_distance(
-        self, city1: Tuple[float, float], city2: Tuple[float, float]
+        self, city1: Union[City, Tuple[float, float]], city2: Union[City, Tuple[float, float]]
     ) -> float:
         """
         Get pre-calculated distance between two cities.
 
         Args:
-            city1: First city coordinates
-            city2: Second city coordinates
+            city1: First city (City object or coordinates)
+            city2: Second city (City object or coordinates)
 
         Returns:
             Distance between the cities
@@ -79,7 +119,10 @@ class DistanceMatrix:
         idx2 = self.city_to_index.get(city2)
 
         if idx1 is None or idx2 is None:
-            return math.hypot(city1[0] - city2[0], city1[1] - city2[1])
+            # Fallback: calculate distance directly
+            coords1 = self._get_coords(city1)
+            coords2 = self._get_coords(city2)
+            return math.hypot(coords1[0] - coords2[0], coords1[1] - coords2[1])
 
         return self.matrix[idx1][idx2]
 
@@ -96,12 +139,12 @@ class DistanceMatrix:
         """
         return self.matrix[idx1][idx2]
 
-    def get_total_distance(self, route: List[Tuple[float, float]]) -> float:
+    def get_total_distance(self, route: List[Union[City, Tuple[float, float]]]) -> float:
         """
         Calculate total distance for a route.
 
         Args:
-            route: List of city coordinates in order
+            route: List of cities (City objects or coordinates) in order
 
         Returns:
             Total distance of the route
@@ -115,17 +158,17 @@ class DistanceMatrix:
         return total
 
     def get_nearest_city(
-        self, city: Tuple[float, float], exclude: set = None
-    ) -> Tuple[float, float]:
+        self, city: Union[City, Tuple[float, float]], exclude: set = None
+    ) -> Union[City, Tuple[float, float]]:
         """
         Find nearest city to given city.
 
         Args:
-            city: City coordinates
+            city: City (City object or coordinates)
             exclude: Set of cities to exclude from search
 
         Returns:
-            Coordinates of nearest city
+            Nearest city (same type as input)
         """
         exclude = exclude or set()
         idx = self.city_to_index.get(city)
