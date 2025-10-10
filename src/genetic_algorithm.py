@@ -147,7 +147,7 @@ def calculate_fitness(
         if b in visited and b != path[-1]:
             distance = 1_000_000.0 + (len(path) * 1000) # Penalidade grande
             if _cache_enabled:
-                _fitness_cache[cache_key] = distance
+                _fitness_cache[route_key] = distance
             return distance
         visited.add(b)
 

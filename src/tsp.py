@@ -345,7 +345,7 @@ def prepare_cities():
 
 # ------------------------- PYGAME -------------------------
 pygame.init()
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + RESULTS_AREA_HEIGHT))
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("TSP Solver com múltiplos veículos")
 clock = pygame.time.Clock()
 
@@ -679,7 +679,17 @@ for v in range(NUM_VEHICLES):
 # Obtém a resposta formatada do LLM
 llm_result = get_llmSolution(solutions_data)
 
-# Cria área de markdown com scroll
+# Captura a tela atual antes de redimensionar
+old_screen = screen.copy()
+
+# Redimensiona a janela para incluir a área de resultados
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + RESULTS_AREA_HEIGHT))
+pygame.display.set_caption("TSP Solver - Resultados Finais")
+
+# Restaura o conteúdo anterior na parte superior
+screen.blit(old_screen, (0, 0))
+
+# Cria área de markdown com scroll na parte inferior
 results_y = SCREEN_HEIGHT
 markdown_area = ScrollableMarkdownArea(0, results_y, SCREEN_WIDTH, RESULTS_AREA_HEIGHT, screen)
 markdown_area.render_markdown(llm_result)
