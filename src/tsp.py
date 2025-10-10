@@ -41,6 +41,10 @@ from constants import (
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     VEHICLE_COLORS,
+    VEHICLE_DISTANCE_LIMITS,
+    MAX_DISTANCE_LIMIT,
+    MIN_DISTANCE_LIMIT,
+    DISTANCE_LIMIT_STEP,
 )
 
 # Benchmark configuration
@@ -311,11 +315,11 @@ def prepare_cities():
     all_cities_for_matrix = [depot] + cities_locations
     distance_matrix, city_to_index = create_distance_matrix(all_cities_for_matrix)
 
-    # Inicializar matriz de distância para otimização
-    distance_matrix = DistanceMatrix(cities_locations)
+    # Inicializar matriz de distância otimizada usando all_cities_for_matrix
+    distance_matrix = DistanceMatrix(all_cities_for_matrix)
     set_distance_matrix(distance_matrix)
 
-    cities_array = np.array(cities_locations)
+    # cities_array = np.array(cities_locations)
     kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=42)
     kmeans.fit(cities_coords_array)
     labels = kmeans.labels_
