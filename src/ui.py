@@ -5,14 +5,12 @@ User Interface module for TSP Solver.
 Handles Pygame-based visualization and user interaction.
 """
 
-import itertools
 import sys
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, List, Tuple
 
 import pygame
-from pygame.locals import *
 
-from config import (
+from constants import (
     CHECKBOX_OFFSET_X,
     CHECKBOX_OFFSET_Y_START,
     CHECKBOX_SPACING,
@@ -21,7 +19,6 @@ from config import (
     LEFT_PANEL_WIDTH,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
-    TABLE_HEIGHT,
     VEHICLE_COLORS,
 )
 from draw_functions import draw_cities, draw_paths

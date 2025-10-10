@@ -6,19 +6,13 @@ Created on Fri Dec 22 16:03:11 2023
 """
 from typing import List, Tuple
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pygame
-import pylab
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
+from constants import MAX_DISTANCE
 from genetic_algorithm import calculate_distance
-from tsp_problem import TSPProblem
-
-matplotlib.use("Agg")
-
-MAX_DISTANCE = 900
 
 
 def draw_button(screen, rect, text, color_bg, color_text=(255, 255, 255)):
@@ -111,7 +105,6 @@ def draw_paths(
     path: List[Tuple[int, int]],
     rgb_color: Tuple[int, int, int],
     width: int = 1,
-    problem: TSPProblem = None,
     vias_proibidas: List[Tuple[int, int]] = None,
     cities_locations: List[Tuple[int, int]] = None,
     postos_abastecimento: List[Tuple[int, int]] = None,
@@ -130,20 +123,14 @@ def draw_paths(
         start = path[i]
         end = path[i + 1]
         color = rgb_color
-        if problem:
-            d = problem.calculate_distance(start, end)
-        else:
-            d = calculate_distance(start, end, cities_locations, vias_proibidas)
+        d = calculate_distance(start, end, cities_locations, vias_proibidas)
         since_last_refuel += d
 
         if postos_abastecimento and since_last_refuel > MAX_DISTANCE:
-            if problem:
-                posto = problem.get_nearest_fuel_station(start)
-            else:
-                posto = min(
-                    postos_abastecimento,
-                    key=lambda p: calculate_distance(start, p, cities_locations),
-                )
+            posto = min(
+                postos_abastecimento,
+                key=lambda p: calculate_distance(start, p, cities_locations),
+            )
             pygame.draw.line(
                 screen, (0, 128, 128), start, posto, 2
             )  # linha até o posto
