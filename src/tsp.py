@@ -51,6 +51,7 @@ from constants import (
 # Benchmark configuration
 MAX_GENERATIONS = None
 last_total_dist = 0
+_isllmintegrationEnabled = False
 
 from distance_matrix import DistanceMatrix
 from draw_functions import draw_cities, draw_paths
@@ -66,9 +67,10 @@ from genetic_algorithm import (
     sort_population,
     tournament_selection,
 )
-
-from llm_integration import get_llmSolution
 from ui import render_markdown_line, ScrollableMarkdownArea
+
+if _isllmintegrationEnabled:
+    from llm_integration import get_llmSolution
 
 # ------------------------- NOMES DE CIDADES -------------------------
 CITY_NAMES = [
@@ -89,7 +91,7 @@ random.shuffle(CITY_NAMES)
 checkboxes = [
     {
         "rect": pygame.Rect(
-            LEFT_PANEL_WIDTH + 70 + CHECKBOX_OFFSET_X, CHECKBOX_OFFSET_Y_START, 20, 20
+            LEFT_PANEL_WIDTH + 50 + CHECKBOX_OFFSET_X, CHECKBOX_OFFSET_Y_START, 20, 20
         ),
         "text": "Via proibida",
         "value": lambda: restricao_via_proibida,
@@ -97,7 +99,7 @@ checkboxes = [
     },
     {
         "rect": pygame.Rect(
-            LEFT_PANEL_WIDTH + CHECKBOX_OFFSET_X,
+            LEFT_PANEL_WIDTH + 50 + CHECKBOX_OFFSET_X,
             CHECKBOX_OFFSET_Y_START + CHECKBOX_SPACING,
             20,
             20,
@@ -108,12 +110,12 @@ checkboxes = [
     },
     {
         "rect": pygame.Rect(
-            LEFT_PANEL_WIDTH + CHECKBOX_OFFSET_X,
+            LEFT_PANEL_WIDTH + 50 + CHECKBOX_OFFSET_X,
             CHECKBOX_OFFSET_Y_START + 2 * CHECKBOX_SPACING,
             20,
             20,
         ),
-        "text": "Parada para Abastecer",
+        "text": "Abastecimento (>=900)",
         "value": lambda: restricao_abastecimento,
         "set": lambda val: set_restricao("max", val),
     },
@@ -158,7 +160,10 @@ def set_viaProibida():
     global vias_proibidas
     vias_proibidas = []
     if restricao_via_proibida:
-        raw_edges = [((814, 344), (877, 291)), ((779, 252), (784, 221))]
+        raw_edges = [((814, 344),(877, 291)),
+                    ((779, 252),(784, 221)),
+                    ((1013, 165),(1014, 119)),
+                    ((1100, 443),(1108, 519))]
         vias_proibidas = []
         for start_coords, end_coords in raw_edges:
             start_city = next((c for c in cities_locations if c.get_coords() == start_coords), None)
@@ -257,7 +262,12 @@ def rebalance_clusters(vehicle_clusters, distance_limits, depot, dist_matrix, ci
             if len(cluster) > 2: # Pelo menos uma cidade além do depósito
                 # Usa uma heurística rápida para estimar a distância
                 heuristic_route = nearest_neighbor_heuristic(cluster, 1)
-                dist = calculate_fitness(heuristic_route, dist_matrix, city_to_idx)
+                dist = calculate_fitness(heuristic_route, 
+                                        dist_matrix, 
+                                        city_to_idx, 
+                                        VEHICLE_DISTANCE_LIMITS[i],
+                                        vias_proibidas,
+                                        postos_abastecimento)
                 estimated_distances.append(dist)
             else:
                 estimated_distances.append(0)
@@ -284,11 +294,12 @@ def rebalance_clusters(vehicle_clusters, distance_limits, depot, dist_matrix, ci
             # Garante que não seja o mesmo veículo
             target_idx = slack[0][1] if slack[0][1] != overloaded_idx else slack[1][1]
 
+            #Comentado por enquanto. Estava inteferindo na restrição de via proibida
             # Move a cidade
-            if city_to_move in vehicle_clusters[overloaded_idx]:
-                vehicle_clusters[overloaded_idx].remove(city_to_move)
-                vehicle_clusters[target_idx].insert(-1, city_to_move) # Insere antes do último depósito
-                print(f"Rebalanceando: Movendo '{city_to_move.name}' do Veículo {v+1} para o Veículo {target_idx+1}")
+            #if city_to_move in vehicle_clusters[overloaded_idx]:
+                #vehicle_clusters[overloaded_idx].remove(city_to_move)
+                #vehicle_clusters[target_idx].insert(-1, city_to_move) # Insere antes do último depósito
+                #print(f"Rebalanceando: Movendo '{city_to_move.name}' do Veículo {v+1} para o Veículo {target_idx+1}")
 
     return vehicle_clusters
 
@@ -636,7 +647,7 @@ while running:
     # ----------------- LINHA DE TOTALIZADORES -----------------
     total_dist = sum(info[1] for info in vehicle_info)
     last_total_dist = total_dist
-    total_cities = sum(info[2] - 1 for info in vehicle_info)  # subtrair depósito
+    total_cities = sum(info[2] for info in vehicle_info)  # subtrair depósito
 
     y = start_y + len(vehicle_info) * row_height
     pygame.draw.rect(
@@ -676,39 +687,40 @@ for v in range(NUM_VEHICLES):
         "rota": route
     })
 
-# Obtém a resposta formatada do LLM
-llm_result = get_llmSolution(solutions_data)
+if _isllmintegrationEnabled:
+    # Obtém a resposta formatada do LLM
+    llm_result = get_llmSolution(solutions_data)
 
-# Captura a tela atual antes de redimensionar
-old_screen = screen.copy()
+    # Captura a tela atual antes de redimensionar
+    old_screen = screen.copy()
 
-# Redimensiona a janela para incluir a área de resultados
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + RESULTS_AREA_HEIGHT))
-pygame.display.set_caption("TSP Solver - Resultados Finais")
+    # Redimensiona a janela para incluir a área de resultados
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + RESULTS_AREA_HEIGHT))
+    pygame.display.set_caption("TSP Solver - Resultados Finais")
 
-# Restaura o conteúdo anterior na parte superior
-screen.blit(old_screen, (0, 0))
+    # Restaura o conteúdo anterior na parte superior
+    screen.blit(old_screen, (0, 0))
 
-# Cria área de markdown com scroll na parte inferior
-results_y = SCREEN_HEIGHT
-markdown_area = ScrollableMarkdownArea(0, results_y, SCREEN_WIDTH, RESULTS_AREA_HEIGHT, screen)
-markdown_area.render_markdown(llm_result)
+    # Cria área de markdown com scroll na parte inferior
+    results_y = SCREEN_HEIGHT
+    markdown_area = ScrollableMarkdownArea(0, results_y, SCREEN_WIDTH, RESULTS_AREA_HEIGHT, screen)
+    markdown_area.render_markdown(llm_result)
 
-pygame.display.flip()
+    pygame.display.flip()
 
-# Aguarda o usuário fechar a janela
-waiting = True
-while waiting:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            waiting = False
-        elif event.type == pygame.KEYDOWN and event.key == pygame.K_q:
-            waiting = False
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            markdown_area.handle_scroll(event)
-            markdown_area.render_markdown(llm_result)
-            pygame.display.flip()
-    clock.tick(30)
+    # Aguarda o usuário fechar a janela
+    waiting = True
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                waiting = False
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+                waiting = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                markdown_area.handle_scroll(event)
+                markdown_area.render_markdown(llm_result)
+                pygame.display.flip()
+        clock.tick(30)
 
 pygame.quit()
 sys.exit()

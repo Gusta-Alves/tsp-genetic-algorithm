@@ -17,7 +17,8 @@ from typing import Dict, List, Tuple
 _fitness_cache: Dict[Tuple[City, ...], float] = {}
 _cache_hits: int = 0
 _cache_misses: int = 0
-_cache_enabled: bool = True
+#Cache desativado por estar interferindo nas restrições interativas
+_cache_enabled: bool = False 
 _distance_matrix = None
 
 
@@ -73,7 +74,7 @@ def get_cache_stats() -> Dict[str, any]:
     }
 
 
-def create_distance_matrix(cities: list[City]) -> tuple[np.ndarray, dict[City, int]]:
+def create_distance_matrix(cities: List[City]) -> Tuple[np.ndarray, Dict[City, int]]:
     """Cria uma matriz de distância e um mapa de cidade para índice."""
     n = len(cities)
     dist_matrix = np.zeros((n, n))
@@ -104,7 +105,7 @@ def calculate_fitness(
     distance_matrix: np.ndarray = None,
     city_to_index: dict = None,
     distance_limit: float = None,
-    vias_proibidas=None,
+    vias_proibidas: List[City] =None,
     postos: List[City] = None,
 ) -> float:
     """
@@ -143,6 +144,12 @@ def calculate_fitness(
         a = path[i]
         b = path[i + 1]
 
+        if (a, b) in vias_proibidas or (b, a) in vias_proibidas:
+            distance = 1_000_000.0 + (len(path) * 1000) # Penalidade grande
+            if _cache_enabled:
+                _fitness_cache[route_key] = distance
+            return distance
+
         # Penaliza rotas que visitam a mesma cidade duas vezes (exceto o depósito no final)
         if b in visited and b != path[-1]:
             distance = 1_000_000.0 + (len(path) * 1000) # Penalidade grande
@@ -152,12 +159,12 @@ def calculate_fitness(
         visited.add(b)
 
         idx_a = city_to_index.get(a)
-        idx_b = city_to_index.get(b)
-
+        idx_b = city_to_index.get(b)        
+        
         # Usa a matriz de distância se possível, senão calcula
-        if idx_a is not None and idx_b is not None:
+        if idx_a is not None and idx_b is not None:         
             d = distance_matrix[idx_a, idx_b]
-        else:
+        else:            
             d = calculate_distance(a, b)
 
         since_last_refuel += d
@@ -231,7 +238,7 @@ def nearest_neighbor_heuristic(
     unvisited = cities[1:-1]  # exclui depósito do início e fim
     current_city = cities[start_city_index]
     route = [depot, current_city]
-    unvisited.remove(current_city)
+    unvisited.remove(current_city)    
     visited = {current_city}
 
     while unvisited:
