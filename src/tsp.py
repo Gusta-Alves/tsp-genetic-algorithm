@@ -48,7 +48,7 @@ from constants import (
 )
 
 # Benchmark configuration
-MAX_GENERATIONS = 100
+MAX_GENERATIONS = None
 last_total_dist = 0
 
 from distance_matrix import DistanceMatrix
@@ -414,9 +414,10 @@ while running:
 
     generation = next(generation_counter)
     # Stop after MAX_GENERATIONS
-    if generation > MAX_GENERATIONS:
-        running = False
-        break
+    if MAX_GENERATIONS is not None:
+        if generation > MAX_GENERATIONS:
+            running = False
+            break
 
     screen.fill((255, 255, 255))
 
