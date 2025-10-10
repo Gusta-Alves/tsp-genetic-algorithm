@@ -8,6 +8,7 @@ All configuration constants are centralized here.
 # Screen dimensions
 SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 650
+RESULTS_AREA_HEIGHT = 300
 
 # Node display
 NODE_RADIUS = 10
