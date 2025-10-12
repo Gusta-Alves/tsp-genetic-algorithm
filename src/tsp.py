@@ -12,7 +12,7 @@ TSP Solver com múltiplos veículos usando GA
 
 import itertools
 import sys
-
+import random
 import matplotlib.pyplot as plt
 import numpy as np
 import pygame
@@ -40,7 +40,8 @@ FPS = 30
 
 POPULATION_SIZE = 100
 MUTATION_PROBABILITY = 0.5
-NUM_VEHICLES = 5
+NUM_VEHICLES = 4
+NUM_CITIES = 48
 VEHICLE_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0),(160, 32, 240)]
 MARGIN = 50
 PROHIBITED_PENALTY = 1e6
@@ -58,23 +59,26 @@ checkboxes = [
         "text": "Via proibida",
         "value": lambda: restricao_via_proibida,
         "set": lambda val: set_restricao("vias", val),
+        "enabled": True,
     },
     {
         "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 50, 20, 20),
         "text": "Cidade prioritária",
         "value": lambda: restricao_cidade_prioritaria,
         "set": lambda val: set_restricao("prioridade", val),
+        "enabled": True,
     },
     {
         "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 80, 20, 20),
         "text": "Parada para Abastecer",
         "value": lambda: restricao_abastecimento,
         "set": lambda val: set_restricao("max", val),
+        "enabled": True,
     },
 ]
 
 input_values = {
-    "veiculos": "5",
+    "veiculos": "4",
     "cidades": "48",
     #"limite_dist": "1000"  # exemplo de valor inicial
     }
@@ -109,7 +113,7 @@ def set_cidadesPrioritarias():
     global cidades_prioritarias
     cidades_prioritarias = []
     if restricao_cidade_prioritaria:
-        cidades_prioritarias = [(944, 389), (674, 342), (900, 174), (1120, 387)]
+        cidades_prioritarias = [(944, 420), (674, 369), (900, 186), (1120, 418)]
         cidades_prioritarias = [tuple(c) for c in cidades_prioritarias]
 
 
@@ -118,10 +122,10 @@ def set_viaProibida():
     vias_proibidas = []
     if restricao_via_proibida:
         vias_proibidas = [
-            ((814, 344), (877, 291)),
-            ((779, 252), (784, 221)),
-            ((1013, 165), (1014, 119)),
-            ((1100, 443), (1108, 519)),
+            ((814, 371), (877, 314)),
+            ((779, 271), (784, 237)),
+            ((1013, 176), (1014, 126)),
+            ((1100, 480), (1108, 562)),
         ]
 
 
@@ -154,7 +158,7 @@ def set_PostosAbastecimento():
     global postos_abastecimento
     postos_abastecimento = []
     if restricao_abastecimento:
-        postos_abastecimento = [(710, 150), (840, 370), (1010, 220), (1060, 430)]
+        postos_abastecimento = [(710, 150), (840, 400), (1140, 180), (1040, 520)]
         postos_abastecimento = [tuple(c) for c in postos_abastecimento]
 
 
@@ -172,8 +176,10 @@ def set_restricao(tipo, val):
 # ------------------------- PREPARAR CIDADES -------------------------
 def prepare_cities():
     global cities_locations, vehicle_clusters, vehicle_populations, depot
-
-    att_cities_locations = np.array(att_48_cities_locations)
+                    
+    #cidades_ativas = att_48_cities_locations[:NUM_CITIES]
+    cidades_ativas = random.sample(att_48_cities_locations, NUM_CITIES)
+    att_cities_locations = np.array(cidades_ativas)
     max_x = max(point[0] for point in att_cities_locations)
     max_y = max(point[1] for point in att_cities_locations)
 
@@ -254,6 +260,8 @@ color_veiculos = (210, 210, 210)
 color_cidades = (210, 210, 210)
 btn_text = "EDITAR"
 running = True
+active_input = None
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -262,9 +270,23 @@ while running:
             running = False
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for cb in checkboxes:
+                if not cb["enabled"]:
+                    continue  # ignora se estiver desabilitado
                 if cb["rect"].collidepoint(event.pos):
                     cb["set"](not cb["value"]())
-            if btn_editar.collidepoint(event.pos):  # botão esquerdo do mouse
+            if btn_reset.collidepoint(event.pos):  # botão esquerdo do mouse 
+                NUM_VEHICLES = 4
+                NUM_CITIES = 48
+                input_values["veiculos"] = str(NUM_VEHICLES)
+                input_values["cidades"] = str(NUM_CITIES)
+                for cb in checkboxes:                                      
+                    cb["enabled"] = True                          
+                    restricao_abastecimento = False
+                    restricao_cidade_prioritaria = False
+                    restricao_via_proibida = False                        
+                reiniciar_GA()
+
+            if btn_editar.collidepoint(event.pos):  # botão esquerdo do mouse                
                 isEditing = not isEditing
                 if isEditing:
                     btn_color = (120, 200, 120)  # verde para confirmar
@@ -277,9 +299,25 @@ while running:
                     if input_values["veiculos"] == "":
                         input_values["veiculos"] = str(NUM_VEHICLES)
                     if input_values["cidades"] == "":
-                        input_values["cidades"] = str(len(att_48_cities_locations))   
+                        input_values["cidades"] = str(len(att_48_cities_locations))
+                    NUM_CITIES = int(input_values["cidades"])
+                    NUM_VEHICLES = int(input_values["veiculos"]) 
 
-                    NUM_VEHICLES = int(input_values["veiculos"])     
+                    if NUM_VEHICLES*2 > NUM_CITIES:
+                        NUM_CITIES = NUM_VEHICLES*2
+                        input_values["cidades"] = str(NUM_CITIES)                
+                for cb in checkboxes:
+                    if NUM_VEHICLES == 4 and NUM_CITIES == 48:                        
+                        cb["enabled"] = True      
+                        print("Checkboxes habilitados")              
+                    else:
+                        restricao_abastecimento = False
+                        restricao_cidade_prioritaria = False
+                        restricao_via_proibida = False
+                        cb["set"](False)
+                        cb["enabled"] = False
+                        print("Checkboxes desabilitados")
+                            
                 reiniciar_GA()
             # ----------------- CLIQUE NOS INPUTS -----------------
             mouse_pos = pygame.mouse.get_pos()
@@ -302,7 +340,7 @@ while running:
                     color_veiculos = (210,210,210)
                     color_cidades = (255,255,255)    
 
-        elif event.type == pygame.KEYDOWN and active_input and isEditing:
+        elif event.type == pygame.KEYDOWN and isEditing and active_input:
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 active_input = None
             elif event.key == pygame.K_BACKSPACE:
@@ -324,24 +362,36 @@ while running:
     # ----------------- DESENHAR CHECKBOXES -----------------
     font = pygame.font.SysFont("Arial", 18)
     for cb in checkboxes:
-        pygame.draw.rect(screen, (0, 0, 0), cb["rect"], 2)
+        # define cores conforme o estado enabled
+        border_color = (0, 0, 0) if cb["enabled"] else (150, 150, 150)
+        text_color = (0, 0, 0) if cb["enabled"] else (150, 150, 150)
+        check_color = (0, 0, 0) if cb["enabled"] else (120, 120, 120)
+        fill_color = (255, 255, 255) if cb["enabled"] else (220, 220, 220)
+
+        # desenha o retângulo
+        pygame.draw.rect(screen, fill_color, cb["rect"])
+        pygame.draw.rect(screen, border_color, cb["rect"], 2)
+
+        # desenha o X se marcado
         if cb["value"]():
             pygame.draw.line(
                 screen,
-                (0, 0, 0),
+                check_color,
                 (cb["rect"].x, cb["rect"].y),
                 (cb["rect"].x + 20, cb["rect"].y + 20),
                 2,
             )
             pygame.draw.line(
                 screen,
-                (0, 0, 0),
+                check_color,
                 (cb["rect"].x + 20, cb["rect"].y),
                 (cb["rect"].x, cb["rect"].y + 20),
                 2,
             )
+
+        # desenha o texto
         screen.blit(
-            font.render(cb["text"], True, (0, 0, 0)),
+            font.render(cb["text"], True, text_color),
             (cb["rect"].x + 25, cb["rect"].y - 2),
         )
 
@@ -357,12 +407,26 @@ while running:
     text_x = btn_editar.x + (btn_editar.width - text_surface.get_width()) // 2
     text_y = btn_editar.y + (btn_editar.height - text_surface.get_height()) // 2
     screen.blit(text_surface, (text_x, text_y))
-        
+
+    # ----------------- BOTAO DE RESET -----------------        
+    btn_reset = pygame.Rect(LEFT_PANEL_WIDTH + 123, GRAPH_HEIGHT + 130, 30, 30)
+
+    # Desenhar botão
+    pygame.draw.rect(screen, btn_color, btn_reset, border_radius=4)    # fundo
+    pygame.draw.rect(screen, (0,0,0), btn_reset, 2, border_radius=4)         # borda
+
+    # Texto centralizado
+    font2 = pygame.font.SysFont("Segoe UI Symbol", 20)  # fonte com ícones Unicode
+    text_surface = font2.render("↻", True, (0,0,0))
+    text_x = btn_reset.x + (btn_reset.width - text_surface.get_width()) // 2
+    text_y = btn_reset.y + (btn_reset.height - text_surface.get_height()) // 2
+    screen.blit(text_surface, (text_x, text_y))
+      
+    # ----------------- DESENHAR INPUTS -----------------            
     # Rótulos dos campos
     screen.blit(font.render("Nº de Veículos:", True, (0, 0, 0)), (LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 170))
     screen.blit(font.render("Nº de Cidades:", True, (0, 0, 0)), (LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 210))
 
-    # ----------------- DESENHAR INPUTS -----------------
     for key, rect in input_rects.items():
         # Desenha retângulo do input
         if key == "veiculos":
@@ -499,7 +563,7 @@ while running:
     # Linhas da tabela (veículos)
     for row, info in enumerate(vehicle_info):
         v, dist, num_cities, last_change = info
-        values = [v, str(round(dist)), str(num_cities - 1), str(last_change)]
+        values = [v, str(round(dist)), str(num_cities), str(last_change)]
         for col, val in enumerate(values):
             x = start_x + sum(col_widths[:col])
             y = start_y + row * row_height
@@ -529,7 +593,7 @@ while running:
 
     # ----------------- LINHA DE TOTALIZADORES -----------------
     total_dist = sum(info[1] for info in vehicle_info)
-    total_cities = sum(info[2] - 1 for info in vehicle_info)  # subtrair depósito
+    total_cities = sum(info[2] for info in vehicle_info)  # subtrair depósito
 
     y = start_y + len(vehicle_info) * row_height
     pygame.draw.rect(
