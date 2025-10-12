@@ -48,6 +48,9 @@ from constants import (
     RESULTS_AREA_HEIGHT,
 )
 
+# Armazena os limites de distância iniciais para permitir um reset completo
+INITIAL_VEHICLE_DISTANCE_LIMITS = list(VEHICLE_DISTANCE_LIMITS)
+
 # Benchmark configuration
 MAX_GENERATIONS = None
 last_total_dist = 0
@@ -242,66 +245,147 @@ def create_initial_population_for_vehicle(cluster):
     return population
 
 
-def rebalance_clusters(vehicle_clusters, distance_limits, depot, dist_matrix, city_to_idx):
+def _estimate_cluster_distance(cluster, vehicle_idx, dist_matrix, city_to_idx):
+    """Estima a distância de uma rota para um cluster usando heurística."""
+    # Garante que o cluster tenha apenas cidades únicas, exceto o depósito
+    unique_cities = []
+    for city in cluster:
+        if city not in unique_cities:
+            unique_cities.append(city)
+
+    if len(unique_cities) <= 1:  # Apenas depósito ou vazio
+        return 0
+
+    heuristic_route = nearest_neighbor_heuristic(unique_cities, 1)
+    dist = calculate_fitness(
+        heuristic_route,
+        dist_matrix.matrix,
+        dist_matrix.city_to_index,
+        VEHICLE_DISTANCE_LIMITS[vehicle_idx],
+        vias_proibidas,
+        postos_abastecimento,
+    )
+    return dist
+
+
+def rebalance_clusters(vehicle_clusters, distance_limits, depot, dist_matrix, city_to_idx, pull_threshold=0.9):
     """
     Rebalanceia os clusters para tentar garantir que as rotas iniciais
     sejam factíveis dentro dos limites de distância dos veículos.
     """
     print("Iniciando rebalanceamento de clusters...")
     MAX_REBALANCE_ITERATIONS = 10
-    rebalanced = True
+    unassigned_cities = []
+    made_a_change = True
     iterations = 0
 
-    while rebalanced and iterations < MAX_REBALANCE_ITERATIONS:
-        rebalanced = False
+    while made_a_change and iterations < MAX_REBALANCE_ITERATIONS:
+        made_a_change = False
         iterations += 1
 
-        # Estima a carga atual de cada veículo
-        estimated_distances = []
-        for i, cluster in enumerate(vehicle_clusters):
-            if len(cluster) > 2: # Pelo menos uma cidade além do depósito
-                # Usa uma heurística rápida para estimar a distância
-                heuristic_route = nearest_neighbor_heuristic(cluster, 1)
-                dist = calculate_fitness(heuristic_route, 
-                                        dist_matrix, 
-                                        city_to_idx, 
-                                        VEHICLE_DISTANCE_LIMITS[i],
-                                        vias_proibidas,
-                                        postos_abastecimento)
-                estimated_distances.append(dist)
-            else:
-                estimated_distances.append(0)
-
-        # Encontra o veículo mais sobrecarregado
+        estimated_distances = [_estimate_cluster_distance(c, i, dist_matrix, city_to_idx) for i, c in enumerate(vehicle_clusters)]
         overload = [(est - limit, i) for i, (est, limit) in enumerate(zip(estimated_distances, distance_limits))]
         overload.sort(key=lambda x: x[0], reverse=True)
 
-        if overload[0][0] > 0: # Se o mais sobrecarregado ainda estiver acima do limite
-            rebalanced = True
+        # 1. Lógica de "Push": Veículo sobrecarregado tenta se livrar de uma cidade
+        if overload[0][0] > 0:
             overloaded_idx = overload[0][1]
             overloaded_cluster = vehicle_clusters[overloaded_idx]
-
-            # Encontra a cidade a ser movida (a mais distante do depósito, por exemplo)
             cities_only = [c for c in overloaded_cluster if c != depot]
-            if not cities_only: continue
+            if cities_only:
+                city_to_move = max(cities_only, key=lambda c: dist_matrix.get_distance(depot, c))
+                # Seleciona apenas veículos que NÃO estão sobrecarregados como alvos potenciais
+                slack = [
+                    (limit - est, i) for i, (est, limit) in enumerate(zip(estimated_distances, distance_limits)) 
+                    if i != overloaded_idx and est <= limit
+                ]
+                slack.sort(key=lambda x: x[0], reverse=True)
+                
+                moved = False
+                for _, target_idx in slack:
+                    temp_cluster = vehicle_clusters[target_idx] + [city_to_move]
+                    new_estimated_dist = _estimate_cluster_distance(temp_cluster, target_idx, dist_matrix, city_to_idx)
+                    if new_estimated_dist <= distance_limits[target_idx]:
+                        vehicle_clusters[overloaded_idx].remove(city_to_move)
+                        vehicle_clusters[target_idx].insert(-1, city_to_move)
+                        print(f"Rebalance (Push): Movendo '{city_to_move.name}' do Veículo {overloaded_idx+1} para o Veículo {target_idx+1}")
+                        made_a_change = True
+                        moved = True
+                        break
+                
+                if not moved:
+                    print(f"Rebalance (Push) falhou. Esvaziando Veículo {overloaded_idx+1}.")
+                    cities_to_unassign = [c for c in vehicle_clusters[overloaded_idx] if c != depot]
+                    unassigned_cities.extend(cities_to_unassign)
+                    vehicle_clusters[overloaded_idx] = [depot, depot]
+                    made_a_change = True
 
-            city_to_move = max(cities_only, key=lambda c: dist_matrix[city_to_idx[depot], city_to_idx[c]])
+        # 2. Lógica de "Pull": Veículo ocioso tenta pegar trabalho de um sobrecarregado
+        # Esta lógica agora roda independentemente da lógica de Push
+        underload = [(est / limit if limit > 0 else float('inf'), i) for i, (est, limit) in enumerate(zip(estimated_distances, distance_limits))]
+        underload.sort(key=lambda x: x[0]) # Do mais ocioso para o menos
 
-            # Encontra o veículo com mais folga para receber a cidade
+        # Se o veículo mais ocioso está abaixo do threshold e há algum veículo sobrecarregado
+        if underload and overload[0][0] > 0 and underload[0][0] < pull_threshold:
+            pulling_vehicle_idx = underload[0][1]
+            # Pega o mais sobrecarregado para ser o alvo
+            target_vehicle_idx = overload[0][1]
+            target_cities = [c for c in vehicle_clusters[target_vehicle_idx] if c != depot]
+
+            if target_cities:
+                # Tenta puxar a cidade do veículo sobrecarregado que está mais próxima do veículo ocioso
+                pulling_vehicle_cities = [c for c in vehicle_clusters[pulling_vehicle_idx] if c != depot]
+                pulling_vehicle_center = np.mean([c.get_coords() for c in pulling_vehicle_cities], axis=0) if pulling_vehicle_cities else depot.get_coords()
+                city_to_pull = min(target_cities, key=lambda c: np.linalg.norm(np.array(c.get_coords()) - pulling_vehicle_center))
+
+                # Verifica se o veículo ocioso pode aceitar a nova cidade
+                temp_pull_cluster = vehicle_clusters[pulling_vehicle_idx] + [city_to_pull]
+                new_pull_dist = _estimate_cluster_distance(temp_pull_cluster, pulling_vehicle_idx, dist_matrix, city_to_idx)
+
+                if new_pull_dist <= distance_limits[pulling_vehicle_idx]:
+                    vehicle_clusters[target_vehicle_idx].remove(city_to_pull)
+                    vehicle_clusters[pulling_vehicle_idx].insert(-1, city_to_pull)
+                    print(f"Rebalance (Pull): Veículo {pulling_vehicle_idx+1} puxou '{city_to_pull.name}' do Veículo {target_vehicle_idx+1}")
+                    made_a_change = True
+
+    # 3. Tenta realocar cidades que ficaram sem veículo
+    if unassigned_cities:
+        print(f"Tentando realocar {len(unassigned_cities)} cidades não alocadas.")
+        remaining_unassigned = []
+        for city in unassigned_cities:
+            moved = False
+            # Recalcula as distâncias e folgas atuais para tomar a melhor decisão
+            estimated_distances = [_estimate_cluster_distance(c, i, dist_matrix, city_to_idx) for i, c in enumerate(vehicle_clusters)]
             slack = [(limit - est, i) for i, (est, limit) in enumerate(zip(estimated_distances, distance_limits))]
             slack.sort(key=lambda x: x[0], reverse=True)
-            
-            # Garante que não seja o mesmo veículo
-            target_idx = slack[0][1] if slack[0][1] != overloaded_idx else slack[1][1]
 
-            #Comentado por enquanto. Estava inteferindo na restrição de via proibida
-            # Move a cidade
-            #if city_to_move in vehicle_clusters[overloaded_idx]:
-                #vehicle_clusters[overloaded_idx].remove(city_to_move)
-                #vehicle_clusters[target_idx].insert(-1, city_to_move) # Insere antes do último depósito
-                #print(f"Rebalanceando: Movendo '{city_to_move.name}' do Veículo {v+1} para o Veículo {target_idx+1}")
+            # Itera sobre os veículos com mais folga para encontrar um lar para a cidade
+            for _, target_idx in slack:
+                # Simula a adição da cidade e estima a nova distância
+                temp_cluster = vehicle_clusters[target_idx] + [city]
+                new_estimated_dist = _estimate_cluster_distance(temp_cluster, target_idx, dist_matrix, city_to_idx)
+                
+                # Apenas move a cidade se o veículo alvo puder recebê-la sem exceder seu limite
+                if new_estimated_dist <= distance_limits[target_idx]:
+                    vehicle_clusters[target_idx].insert(-1, city)
+                    print(
+                        f"Rebalance (Re-assign): Movendo cidade órfã '{city.name}' para o Veículo {target_idx + 1}"
+                    )
+                    moved = True
+                    break
+            if not moved:
+                # ORDEM: Nenhuma cidade pode sobrar.
+                # Se a cidade não coube em nenhum lugar, força a alocação no veículo "menos pior"
+                # (aquele que seria menos sobrecarregado) e zera sua rota para sinalizar o problema.
+                overload_by_adding = [
+                    (_estimate_cluster_distance(vehicle_clusters[i] + [city], i, dist_matrix, city_to_idx) - distance_limits[i], i)
+                    for i in range(NUM_VEHICLES)
+                ]
+                least_bad_idx = min(overload_by_adding, key=lambda x: x[0])[1]
+                vehicle_clusters[least_bad_idx].insert(-1, city)
+                print(f"Alocação forçada: '{city.name}' adicionada ao Veículo {least_bad_idx + 1}, que ficará sobrecarregado.")
 
-    return vehicle_clusters
+    return True
 
 
 # ------------------------- PREPARAR CIDADES -------------------------
@@ -376,22 +460,83 @@ def reiniciar_GA():
     prepare_cities()
     # Rebalanceia os clusters com base nos limites de distância
     global vehicle_clusters
-    vehicle_clusters = rebalance_clusters(vehicle_clusters, VEHICLE_DISTANCE_LIMITS, depot, distance_matrix, city_to_index)
+    rebalance_clusters(vehicle_clusters, VEHICLE_DISTANCE_LIMITS, depot, distance_matrix, city_to_index)
 
 
-def rebalance_and_reset_all():
+def show_popup_message(screen, message, reset_to_initial=False):
+    """Exibe uma mensagem de popup com um botão 'OK' e aguarda o clique."""
+    global VEHICLE_DISTANCE_LIMITS
+
+    font_title = pygame.font.SysFont("Arial", 22, bold=True)
+    font_button = pygame.font.SysFont("Arial", 20)
+
+    # --- Mensagem ---
+    text_surface = font_title.render(message, True, (255, 255, 255))
+
+    # --- Botão OK ---
+    button_text_surface = font_button.render("OK", True, (0, 0, 0))
+    button_width, button_height = button_text_surface.get_width() + 40, button_text_surface.get_height() + 10
+
+    # --- Cálculo do tamanho do Popup ---
+    rect_width = max(text_surface.get_width() + 40, button_width + 40)
+    rect_height = text_surface.get_height() + button_height + 40  # Espaço para texto, botão e padding
+
+    # --- Posições ---
+    popup_rect = pygame.Rect((SCREEN_WIDTH - rect_width) // 2, (SCREEN_HEIGHT - rect_height) // 2, rect_width, rect_height)
+    text_rect = text_surface.get_rect(center=popup_rect.center)
+    button_rect = pygame.Rect(popup_rect.centerx - button_width // 2, popup_rect.bottom - button_height - 15, button_width, button_height)
+    button_text_rect = button_text_surface.get_rect(center=button_rect.center)
+
+    # --- Loop de espera pelo clique ---
+    waiting_for_click = True
+    while waiting_for_click:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if button_rect.collidepoint(event.pos):
+                    if reset_to_initial:
+                        print("Resetando todos os limites para os valores iniciais.")
+                        VEHICLE_DISTANCE_LIMITS = list(INITIAL_VEHICLE_DISTANCE_LIMITS)
+                        rebalance_and_reset_all()
+                    waiting_for_click = False
+
+        # Desenha o popup
+        pygame.draw.rect(screen, (200, 0, 0), popup_rect, border_radius=10)  # Fundo vermelho
+        pygame.draw.rect(screen, (255, 255, 255), popup_rect, width=2, border_radius=10)  # Borda branca
+        screen.blit(text_surface, text_rect)
+
+        # Desenha o botão
+        pygame.draw.rect(screen, (220, 220, 220), button_rect, border_radius=5)
+        screen.blit(button_text_surface, button_text_rect)
+
+        pygame.display.flip()
+
+
+def rebalance_and_reset_all(is_initial_setup=False):
     """
     Rebalanceia os clusters com base nos limites atuais e reinicia as populações
     e o histórico de todos os veículos.
     """
     global vehicle_clusters, vehicle_populations, vehicle_best_fitness, vehicle_best_solutions, vehicle_last_change, generation_counter
-    
+
+    # Faz uma cópia profunda para poder reverter se o rebalanceamento falhar
+    original_clusters = [list(c) for c in vehicle_clusters]
+
     print("Rebalanceamento global acionado por mudança de limite.")
-    
+
     # 1. Rebalanceia os clusters com os novos limites
-    vehicle_clusters = rebalance_clusters(vehicle_clusters, VEHICLE_DISTANCE_LIMITS, depot, distance_matrix, city_to_index)
-    
+    rebalance_successful = rebalance_clusters(vehicle_clusters, VEHICLE_DISTANCE_LIMITS, depot, distance_matrix, city_to_index)
+
     # 2. Cria novas populações para os clusters rebalanceados
+    if not rebalance_successful:
+        print("Rebalanceamento falhou. Revertendo clusters.")
+        # Restaura o estado anterior dos clusters para manter a consistência
+        # A reversão do limite de distância é feita no loop principal
+        vehicle_clusters = original_clusters
+        return False # Indica falha
+
     vehicle_populations = [create_initial_population_for_vehicle(c) for c in vehicle_clusters]
     
     # 3. Reseta o histórico de otimização de todos os veículos
@@ -399,6 +544,7 @@ def rebalance_and_reset_all():
     vehicle_best_solutions = [[] for _ in range(NUM_VEHICLES)]
     vehicle_last_change = [0] * NUM_VEHICLES
     generation_counter = itertools.count(start=1)
+    return True
 
 
 # ------------------------- LOOP PRINCIPAL -------------------------
@@ -421,14 +567,20 @@ while running:
             # Lógica para os botões de ajuste de limite
             for button in spinner_buttons:
                 if button['rect'].collidepoint(event.pos):
+                    # Faz backup dos limites ANTES de qualquer alteração
+                    original_limits = list(VEHICLE_DISTANCE_LIMITS)
+
                     v_idx = button['vehicle_idx']
-                    current_limit = VEHICLE_DISTANCE_LIMITS[v_idx]
                     if button['type'] == '+':
-                        new_limit = min(MAX_DISTANCE_LIMIT, current_limit + DISTANCE_LIMIT_STEP)
+                        new_limit = min(MAX_DISTANCE_LIMIT, original_limits[v_idx] + DISTANCE_LIMIT_STEP)
                     else: # type == '-'
-                        new_limit = max(MIN_DISTANCE_LIMIT, current_limit - DISTANCE_LIMIT_STEP)
+                        new_limit = max(MIN_DISTANCE_LIMIT, original_limits[v_idx] - DISTANCE_LIMIT_STEP)
+                    
                     VEHICLE_DISTANCE_LIMITS[v_idx] = new_limit
-                    rebalance_and_reset_all() # Aciona o rebalanceamento global
+                    if not rebalance_and_reset_all(): # Se o rebalanceamento falhar
+                        show_popup_message(screen, "Não é possível reduzir: nenhum veículo pode absorver a carga.", reset_to_initial=True)
+                        # Pula o resto do loop para redesenhar com os valores revertidos
+                        continue
                     break # Evita processar outros botões no mesmo clique
 
     generation = next(generation_counter)
@@ -492,6 +644,47 @@ while running:
         )
         best_solution = population[0]
         
+        # ORDEM: Não atualizar se a distância for maior que o limite.
+        # Se a melhor rota encontrada ainda excede o limite, zera a rota deste veículo.
+        # E tenta rebalancear as cidades para outros veículos.
+        if best_fitness > VEHICLE_DISTANCE_LIMITS[v] and len(best_solution) > 2:
+            print(f"Veículo {v+1}: Rota ótima ({best_fitness:.2f}) excede o limite ({VEHICLE_DISTANCE_LIMITS[v]}). Zerando e tentando rebalancear.")
+            cities_to_reassign = [city for city in best_solution if city != depot]
+            best_solution = [depot, depot]
+            # ORDEM: Garante que as cidades sejam removidas do cluster original
+            # para que possam ser reatribuídas sem duplicação.
+            vehicle_clusters[v] = [depot, depot]
+            best_fitness = 0.0
+            unassigned_cities_after_rebalance = []
+
+            # Tenta reatribuir as cidades para outros veículos com capacidade
+            for city_to_move in cities_to_reassign:
+                # Encontra o melhor veículo (com mais folga) para receber a cidade
+                best_target_idx = -1
+                best_slack = -float('inf')
+
+                for target_v in range(NUM_VEHICLES):
+                    if target_v == v: continue
+                    
+                    # Simula a adição e verifica se o limite é respeitado
+                    temp_cluster = vehicle_clusters[target_v] + [city_to_move]
+                    new_dist = _estimate_cluster_distance(temp_cluster, target_v, distance_matrix, city_to_index)
+                    
+                    if new_dist <= VEHICLE_DISTANCE_LIMITS[target_v]:
+                        current_slack = VEHICLE_DISTANCE_LIMITS[target_v] - new_dist
+                        if current_slack > best_slack:
+                            best_slack = current_slack
+                            best_target_idx = target_v
+                
+                if best_target_idx != -1:
+                    vehicle_clusters[best_target_idx].insert(-1, city_to_move)
+                    print(f"Rebalanceamento em tempo real: Movendo '{city_to_move.name}' para o Veículo {best_target_idx + 1}")
+                else:
+                    unassigned_cities_after_rebalance.append(city_to_move)
+            
+            if unassigned_cities_after_rebalance:
+                show_popup_message(screen, "Algumas cidades não puderam ser realocadas!")
+
         final_displayed_solutions[v] = best_solution
         final_displayed_fitness[v] = best_fitness
 

@@ -186,6 +186,8 @@ def calculate_fitness(
 
     if distance_limit is not None and distance > distance_limit:
         distance += (distance - distance_limit) * 10
+        # Penalidade severa para garantir que rotas que excedem o limite sejam descartadas.
+
 
     # --- Fim do cálculo do Fitness ---
 
@@ -229,6 +231,10 @@ def nearest_neighbor_heuristic(
     """
     Heurística vizinho mais próximo, mantendo depósito fixo no início e fim.
     """
+    # Se o cluster tiver 0 ou 1 cidade (além do depósito), retorna a rota simples.
+    if len(cities_in_cluster) <= 3:  # Ex: [depot, city_A, depot] ou [depot, depot]
+        return cities_in_cluster
+
     cities = cities_in_cluster
     depot = cities[0]
 
@@ -236,10 +242,10 @@ def nearest_neighbor_heuristic(
         return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
     unvisited = cities[1:-1]  # exclui depósito do início e fim
-    current_city = cities[start_city_index]
+    current_city = unvisited[start_city_index -1] # Adjust index for the sliced list
     route = [depot, current_city]
-    unvisited.remove(current_city)    
-    visited = {current_city}
+    unvisited.remove(current_city)
+    visited = {current_city, depot}
 
     while unvisited:
         candidates = [city for city in unvisited if city not in visited]
