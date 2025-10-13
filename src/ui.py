@@ -207,25 +207,31 @@ class TSPSolverUI:
         fuel_stations: List[Tuple[float, float]],
         problem=None,
     ):
-        """Draw the city map with routes."""
+        """Draw the city map with routes, ensuring correct coloring."""
+        # 1. Criar um mapa de cidade para cor para evitar sobreposição
+        city_to_color_map = {}
+        for v_idx, cluster in enumerate(vehicle_clusters):
+            color = self.vehicle_colors[v_idx]
+            # Itera sobre as cidades do cluster (exceto o depósito duplicado no final)
+            for city in cluster[:-1]:
+                city_to_color_map[city] = color
+
+        # 2. Desenhar todas as cidades uma única vez com a cor correta
+        # Agrupa as cidades por cor para chamadas de desenho eficientes
+        color_to_cities_map = {}
+        for city, color in city_to_color_map.items():
+            if color not in color_to_cities_map:
+                color_to_cities_map[color] = []
+            color_to_cities_map[color].append(city)
+
+        for color, cities_in_cluster in color_to_cities_map.items():
+            draw_cities(self.screen, cities_in_cluster, color, 10, depot, priority_cities, fuel_stations)
+
+        # 3. Desenhar todas as rotas por cima das cidades
         for v in range(len(vehicle_clusters)):
             color = self.vehicle_colors[v]
             solution = vehicle_solutions[v] if v < len(vehicle_solutions) else []
-            cluster = vehicle_clusters[v]
-
-            draw_paths(
-                self.screen,
-                solution,
-                color,
-                width=3,
-                problem=problem,
-                vias_proibidas=prohibited_edges,
-                cities_locations=cities_locations,
-                postos_abastecimento=fuel_stations,
-            )
-            draw_cities(
-                self.screen, cluster, color, 10, depot, priority_cities, fuel_stations
-            )
+            draw_paths(self.screen, solution, color, width=3, vias_proibidas=prohibited_edges, cities_locations=cities_locations, postos_abastecimento=fuel_stations)
 
     def update_display(self):
         """Update the display."""

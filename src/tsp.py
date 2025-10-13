@@ -217,14 +217,19 @@ def set_restricao(tipo, val):
     elif tipo == "max":
         restricao_abastecimento = val
 
-    # ORDEM: Se uma restrição for alterada, todos os limites de distância devem retornar aos valores iniciais.
-    print("Restrição alterada. Resetando limites de distância para os valores iniciais.")
+    # Atualiza as listas de restrições globais com base nos novos valores
+    set_viaProibida()
+    set_cidadesPrioritarias()
+    set_PostosAbastecimento()
+
+    # Quando uma restrição é alterada, reseta os limites de distância para os valores padrão.
+    print("Restrição alterada. Resetando limites de distância para os valores padrão.")
+    # A variável `INITIAL_VEHICLE_DISTANCE_LIMITS` armazena os valores do arquivo de constantes.
     VEHICLE_DISTANCE_LIMITS[:] = INITIAL_VEHICLE_DISTANCE_LIMITS
 
-    reiniciar_GA()  # reinicia apenas populações e histórico
+    return rebalance_and_reset_all(is_initial_setup=False)
 
-
-def create_initial_population_for_vehicle(cluster):
+def create_initial_population_for_vehicle(cluster: list[City]) -> list[list[City]]:
     """Cria uma população inicial para um único cluster de veículo."""
     population = []
     # Heurísticas iniciais
@@ -250,7 +255,7 @@ def create_initial_population_for_vehicle(cluster):
     return population
 
 
-def _estimate_cluster_distance(cluster, vehicle_idx, dist_matrix, city_to_idx):
+def _estimate_cluster_distance(cluster: list[City], vehicle_idx: int, dist_matrix: DistanceMatrix, city_to_idx: dict, apply_limit_penalty: bool = True) -> float:
     """Estima a distância de uma rota para um cluster usando heurística."""
     # Garante que o cluster tenha apenas cidades únicas, exceto o depósito
     unique_cities = []
@@ -262,18 +267,19 @@ def _estimate_cluster_distance(cluster, vehicle_idx, dist_matrix, city_to_idx):
         return 0
 
     heuristic_route = nearest_neighbor_heuristic(unique_cities, 1)
+    limit = VEHICLE_DISTANCE_LIMITS[vehicle_idx] if apply_limit_penalty else None
     dist = calculate_fitness(
         heuristic_route,
         dist_matrix,
         city_to_idx,
-        VEHICLE_DISTANCE_LIMITS[vehicle_idx],
+        limit,
         vias_proibidas,
         postos_abastecimento,
     )
     return dist
 
 
-def rebalance_clusters(vehicle_clusters, distance_limits, depot, dist_matrix, city_to_idx, pull_threshold=0.9) -> bool:
+def rebalance_clusters(vehicle_clusters: list[list[City]], distance_limits: list[float], depot: City, dist_matrix: DistanceMatrix, city_to_idx: dict, pull_threshold: float = 0.9) -> bool:
     """
     Rebalanceia os clusters para tentar garantir que as rotas iniciais
     sejam factíveis dentro dos limites de distância dos veículos.
@@ -346,15 +352,28 @@ def rebalance_clusters(vehicle_clusters, distance_limits, depot, dist_matrix, ci
         # A lógica de "pull" agora tenta balancear mesmo que ninguém esteja sobrecarregado.
         if not made_a_change and underload and len(overload) > 1 and underload[0][0] < pull_threshold:
             pulling_vehicle_idx = underload[0][1]
-            # Pega o veículo mais carregado do sistema como alvo para puxar uma cidade
-            target_vehicle_idx = overload[0][1] 
-            target_cities = [c for c in vehicle_clusters[target_vehicle_idx] if c != depot]
+            pulling_vehicle_cities = [c for c in vehicle_clusters[pulling_vehicle_idx] if c != depot]
+            pulling_vehicle_center = np.mean([c.get_coords() for c in pulling_vehicle_cities], axis=0) if pulling_vehicle_cities else depot.get_coords()
 
-            if target_cities:
-                pulling_vehicle_cities = [c for c in vehicle_clusters[pulling_vehicle_idx] if c != depot]
-                pulling_vehicle_center = np.mean([c.get_coords() for c in pulling_vehicle_cities], axis=0) if pulling_vehicle_cities else depot.get_coords()
-                city_to_pull = min(target_cities, key=lambda c: np.linalg.norm(np.array(c.get_coords()) - pulling_vehicle_center))
+            # Encontra a melhor cidade para puxar de QUALQUER outro cluster mais carregado
+            best_candidate = None
+            best_candidate_score = float('inf')
+            source_vehicle_idx = -1
 
+            for other_idx, other_cluster in enumerate(vehicle_clusters):
+                if other_idx == pulling_vehicle_idx or estimated_distances[other_idx] < estimated_distances[pulling_vehicle_idx]:
+                    continue # Não puxa de si mesmo ou de veículos menos carregados
+                
+                for city in [c for c in other_cluster if c != depot]:
+                    dist_to_center = np.linalg.norm(np.array(city.get_coords()) - pulling_vehicle_center)
+                    if dist_to_center < best_candidate_score:
+                        best_candidate = city
+                        best_candidate_score = dist_to_center
+                        source_vehicle_idx = other_idx
+
+            if best_candidate:
+                city_to_pull = best_candidate
+                target_vehicle_idx = source_vehicle_idx
                 temp_pull_cluster = vehicle_clusters[pulling_vehicle_idx] + [city_to_pull]
                 new_pull_dist = _estimate_cluster_distance(temp_pull_cluster, pulling_vehicle_idx, dist_matrix, city_to_idx)
 
@@ -393,7 +412,7 @@ def rebalance_clusters(vehicle_clusters, distance_limits, depot, dist_matrix, ci
     return True
 
 
-# ------------------------- PREPARAR CIDADES -------------------------
+# ------------------------- PREPARAR DADOS -------------------------
 def prepare_cities():
     global cities_locations, vehicle_clusters, vehicle_populations, depot, distance_matrix, city_to_index
 
@@ -450,7 +469,7 @@ pygame.display.set_caption("TSP Solver com múltiplos veículos")
 clock = pygame.time.Clock()
 
 def show_popup_message(screen, message, reset_to_initial=False) -> bool:
-    """
+    """Exibe uma mensagem de popup com um botão 'OK'.
     Exibe uma mensagem de popup com um botão 'OK'.
     Retorna True se o botão foi clicado, indicando a necessidade de reset.
     """
@@ -501,7 +520,7 @@ def show_popup_message(screen, message, reset_to_initial=False) -> bool:
     return False
 
 # ------------------------- FUNÇÃO PARA REINICIAR POPULAÇÃO -------------------------
-def reiniciar_GA():
+def reiniciar_GA() -> bool:
     global vehicle_best_fitness, vehicle_best_solutions, vehicle_last_change, generation_counter, distance_matrix, city_to_index
     vehicle_best_fitness = [[] for _ in range(NUM_VEHICLES)]
     vehicle_best_solutions = [[] for _ in range(NUM_VEHICLES)]
@@ -519,7 +538,8 @@ def reiniciar_GA():
         if show_popup_message(screen, "Não foi possível alocar todas as cidades!", reset_to_initial=True):
             print("Resetando todos os limites para os valores iniciais.")
             VEHICLE_DISTANCE_LIMITS[:] = INITIAL_VEHICLE_DISTANCE_LIMITS
-            return True # Sinaliza para o loop principal que um reset completo é necessário
+            return False # Falhou
+    return True
 
 
 def rebalance_and_reset_all(is_initial_setup=False) -> bool:
@@ -541,7 +561,7 @@ def rebalance_and_reset_all(is_initial_setup=False) -> bool:
     # 2. Cria novas populações para os clusters rebalanceados
     if not rebalance_successful:
         print("Rebalanceamento falhou. Revertendo clusters.")
-        vehicle_clusters[:] = original_clusters # Restaura o estado anterior
+        vehicle_clusters[:] = original_clusters  # Restaura o estado anterior
         return False # Indica falha para o chamador
 
     vehicle_populations = [create_initial_population_for_vehicle(c) for c in vehicle_clusters]
@@ -554,6 +574,39 @@ def rebalance_and_reset_all(is_initial_setup=False) -> bool:
     return True
 
 
+def force_redraw_after_rebalance():
+    """
+    Força uma nova renderização completa da tela.
+    Usado após operações que alteram fundamentalmente o estado (como rebalanceamento),
+    para garantir que a UI reflita imediatamente a mudança, sem esperar o próximo ciclo do loop.
+    """
+    screen.fill((255, 255, 255))
+
+    # Desenha os checkboxes
+    font = pygame.font.SysFont("Arial", 18)
+    for cb in checkboxes:
+        pygame.draw.rect(screen, (0, 0, 0), cb["rect"], 2)
+        if cb["value"]():
+            pygame.draw.line(screen, (0, 0, 0), (cb["rect"].x, cb["rect"].y), (cb["rect"].x + 20, cb["rect"].y + 20), 2)
+            pygame.draw.line(screen, (0, 0, 0), (cb["rect"].x + 20, cb["rect"].y), (cb["rect"].x, cb["rect"].y + 20), 2)
+        screen.blit(font.render(cb["text"], True, (0, 0, 0)), (cb["rect"].x + 25, cb["rect"].y - 2))
+
+    # Desenha as cidades com as cores dos clusters já rebalanceados
+    for v_idx, cluster in enumerate(vehicle_clusters):
+        draw_cities(
+            screen,
+            cluster,
+            VEHICLE_COLORS[v_idx],
+            NODE_RADIUS,
+            depot,
+            cidades_prioritarias,
+            postos_abastecimento,
+        )
+
+    # Atualiza a tela para mostrar o novo estado
+    pygame.display.flip()
+
+
 # ------------------------- LOOP PRINCIPAL -------------------------
 
 reiniciar_GA()
@@ -562,6 +615,7 @@ spinner_buttons = [] # Armazenará os rects dos botões +/-
 start_time = time.time()
 running = True
 while running:
+    constraint_changed = False
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -569,8 +623,9 @@ while running:
             running = False
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for cb in checkboxes:
-                if cb["rect"].collidepoint(event.pos):
-                    cb["set"](not cb["value"]())
+                if cb["rect"].collidepoint(event.pos) and cb["set"](not cb["value"]()):
+                    constraint_changed = True
+                    break  # Uma mudança de restrição foi feita, não precisa checar outros botões
             # Lógica para os botões de ajuste de limite
             for button in spinner_buttons:
                 if button['rect'].collidepoint(event.pos):
@@ -582,16 +637,32 @@ while running:
                         new_limit = max(MIN_DISTANCE_LIMIT, original_limits[v_idx] - DISTANCE_LIMIT_STEP)
                     VEHICLE_DISTANCE_LIMITS[v_idx] = new_limit
                     if not rebalance_and_reset_all():
-                        VEHICLE_DISTANCE_LIMITS[:] = original_limits # Reverte a mudança                        
+                        VEHICLE_DISTANCE_LIMITS[:] = original_limits  # Reverte a mudança
                         if show_popup_message(screen, "Não foi possível alocar todas as cidades!", reset_to_initial=True):
                             print("Resetando todos os limites para os valores iniciais.")
                             VEHICLE_DISTANCE_LIMITS[:] = INITIAL_VEHICLE_DISTANCE_LIMITS
-                            reiniciar_GA()
-                    break # Evita processar outros botões no mesmo clique
+                            if rebalance_and_reset_all():
+                                constraint_changed = True
+                            else:  # Falhou, precisa de um reset completo
+                                continue
+                    constraint_changed = True
+                    break  # Evita processar outros botões no mesmo clique
+
+    # Se uma restrição mudou, pula o ciclo de evolução e apenas redesenha a tela.
+    if constraint_changed:
+        force_redraw_after_rebalance()
+        continue
 
     generation = next(generation_counter)
     # Stop after MAX_GENERATIONS
     if MAX_GENERATIONS is not None:
+        # Na primeira geração, força um rebalanceamento completo para garantir o estado inicial correto.
+        if generation == 1:
+            print("Primeira geração: Executando rebalanceamento inicial.")
+            # Se o rebalanceamento falhar e exigir um reset, o loop principal será reiniciado.
+            if rebalance_and_reset_all(is_initial_setup=True) is False:
+                # O popup já foi tratado dentro de rebalance_and_reset_all
+                continue # Pula para a próxima iteração do loop para recomeçar
         if generation > MAX_GENERATIONS:
             running = False
             break
@@ -622,6 +693,21 @@ while running:
             (cb["rect"].x + 25, cb["rect"].y - 2),
         )
 
+    # ----------------- DESENHAR CIDADES (MAPA) -----------------
+    # Desenha cada cluster de cidades com a cor do seu respectivo veículo.
+    # Isso é feito antes de desenhar as rotas para evitar sobreposição.
+    for v_idx, cluster in enumerate(vehicle_clusters):
+        draw_cities(
+            screen,
+            cluster,
+            VEHICLE_COLORS[v_idx],
+            NODE_RADIUS,
+            depot,
+            cidades_prioritarias,
+            postos_abastecimento,
+        )
+
+
     # ----------------- PARA CADA VEÍCULO -----------------
     vehicle_info = []
     for v in range(NUM_VEHICLES):
@@ -651,7 +737,7 @@ while running:
         best_solution = population[0]
         
         # ORDEM: Se a distância for maior que o limite, zera a rota.
-        if best_fitness > VEHICLE_DISTANCE_LIMITS[v] and len(best_solution) > 2:
+        if best_fitness >= VEHICLE_DISTANCE_LIMITS[v] and len(best_solution) > 2:
             # Imprime no console que o rebalanceamento falhou para este veículo.
             print(f"Veículo {v+1}: Não foi possível rebalancear. Rota ótima ({best_fitness:.2f}) excede o limite ({VEHICLE_DISTANCE_LIMITS[v]}). Zerando rota.")
             # Zera a rota para exibição
@@ -682,16 +768,6 @@ while running:
             vias_proibidas=vias_proibidas if restricao_via_proibida else [],
             cities_locations=cities_locations,
             postos_abastecimento=postos_abastecimento,
-        )
-
-        draw_cities(
-            screen,
-            vehicle_clusters[v],
-            VEHICLE_COLORS[v],
-            NODE_RADIUS,
-            depot,
-            cidades_prioritarias,
-            postos_abastecimento,
         )
 
         # Evolução da população
