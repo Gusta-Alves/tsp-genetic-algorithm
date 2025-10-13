@@ -609,7 +609,11 @@ def force_redraw_after_rebalance():
 
 # ------------------------- LOOP PRINCIPAL -------------------------
 
+# Executa a configuração inicial e o primeiro rebalanceamento ANTES do loop principal.
 reiniciar_GA()
+print("Primeira geração: Executando rebalanceamento inicial.")
+if not rebalance_and_reset_all(is_initial_setup=True):
+    print("Falha no rebalanceamento inicial. O programa pode não funcionar como esperado.")
 
 spinner_buttons = [] # Armazenará os rects dos botões +/-
 start_time = time.time()
@@ -655,21 +659,12 @@ while running:
 
     generation = next(generation_counter)
     # Stop after MAX_GENERATIONS
-    if MAX_GENERATIONS is not None:
-        # Na primeira geração, força um rebalanceamento completo para garantir o estado inicial correto.
-        if generation == 1:
-            print("Primeira geração: Executando rebalanceamento inicial.")
-            # Se o rebalanceamento falhar e exigir um reset, o loop principal será reiniciado.
-            if rebalance_and_reset_all(is_initial_setup=True) is False:
-                # O popup já foi tratado dentro de rebalance_and_reset_all
-                continue # Pula para a próxima iteração do loop para recomeçar
-        if generation > MAX_GENERATIONS:
-            running = False
-            break
+    if MAX_GENERATIONS is not None and generation > MAX_GENERATIONS:
+        running = False
+        break
 
     screen.fill((255, 255, 255))
 
-    # ----------------- DESENHAR CHECKBOXES -----------------
     font = pygame.font.SysFont("Arial", 18)
     for cb in checkboxes:
         pygame.draw.rect(screen, (0, 0, 0), cb["rect"], 2)
@@ -695,7 +690,6 @@ while running:
 
     # ----------------- DESENHAR CIDADES (MAPA) -----------------
     # Desenha cada cluster de cidades com a cor do seu respectivo veículo.
-    # Isso é feito antes de desenhar as rotas para evitar sobreposição.
     for v_idx, cluster in enumerate(vehicle_clusters):
         draw_cities(
             screen,
@@ -706,7 +700,6 @@ while running:
             cidades_prioritarias,
             postos_abastecimento,
         )
-
 
     # ----------------- PARA CADA VEÍCULO -----------------
     vehicle_info = []
