@@ -35,7 +35,7 @@ class CityClusterer:
             List of city clusters, each containing depot + cities + depot
         """
         cities_array = np.array(self.problem.cities)
-        kmeans = KMeans(n_clusters=self.num_vehicles, random_state=42)
+        kmeans = KMeans(n_clusters=self.num_vehicles, random_state=72)
         labels = kmeans.fit_predict(cities_array)
 
         clusters = [[] for _ in range(self.num_vehicles)]

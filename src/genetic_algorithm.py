@@ -10,9 +10,6 @@ import math
 import random
 from typing import List, Protocol, Tuple
 
-from tsp_problem import TSPProblem
-
-
 def calculate_distance(
     point1: Tuple[float, float],
     point2: Tuple[float, float],
@@ -81,9 +78,6 @@ def calculate_fitness(
 class FitnessCalculator:
     """Calculates fitness for TSP routes."""
 
-    def __init__(self, problem: TSPProblem):
-        self.problem = problem
-
     def calculate_fitness(self, route: List[Tuple[float, float]]) -> float:
         """
         Calculate fitness of a route.
@@ -108,14 +102,10 @@ def generate_random_population(
     Mantém depósito fixo na primeira e última posição.
     Suporta tanto TSPProblem quanto lista de cidades (para compatibilidade).
     """
-    if isinstance(problem_or_cities, TSPProblem):
-        depot = problem_or_cities.depot
-        cities = problem_or_cities.cities[1:-1]  # Exclui depósito para embaralhar
-    else:
-        # Modo legado
-        cities = problem_or_cities
-        depot = cities[0]
-        cities = cities[1:-1]  # Exclui depósito para embaralhar
+  
+    cities = problem_or_cities
+    depot = cities[0]
+    cities = cities[1:-1]  # Exclui depósito para embaralhar
 
     population = []
     for _ in range(population_size):
@@ -139,21 +129,16 @@ def nearest_neighbor_heuristic(
     Heurística vizinho mais próximo, mantendo depósito fixo no início e fim.
     Suporta tanto TSPProblem quanto lista de cidades (para compatibilidade).
     """
-    if isinstance(problem_or_cities, TSPProblem):
-        problem = problem_or_cities
-        depot = problem.depot
-        cities = problem.cities
-        calculate_dist = problem.calculate_distance
-    else:
-        # Modo legado
-        cities = problem_or_cities
-        depot = cities[0]
-        cities = cities  # usa cities_compare se fornecido
-        if cities_compare:
-            cities = cities_compare
+   
+    # Modo legado
+    cities = problem_or_cities
+    depot = cities[0]
+    cities = cities  # usa cities_compare se fornecido
+    if cities_compare:
+        cities = cities_compare
 
-        def calculate_dist(p1, p2):
-            return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+    def calculate_dist(p1, p2):
+        return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
 
     unvisited = cities[1:-1]  # exclui depósito
     current_city = cities[start_city_index]

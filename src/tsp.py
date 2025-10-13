@@ -199,7 +199,7 @@ def prepare_cities():
     depot = (depot_x, depot_y)
 
     cities_array = np.array(cities_locations)
-    kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=42)
+    kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=72)
     kmeans.fit(cities_array)
     labels = kmeans.labels_
 

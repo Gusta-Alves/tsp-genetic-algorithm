@@ -14,7 +14,6 @@ import pylab
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from genetic_algorithm import calculate_distance
-from tsp_problem import TSPProblem
 
 matplotlib.use("Agg")
 
@@ -110,8 +109,7 @@ def draw_paths(
     screen: pygame.Surface,
     path: List[Tuple[int, int]],
     rgb_color: Tuple[int, int, int],
-    width: int = 1,
-    problem: TSPProblem = None,
+    width: int = 1,    
     vias_proibidas: List[Tuple[int, int]] = None,
     cities_locations: List[Tuple[int, int]] = None,
     postos_abastecimento: List[Tuple[int, int]] = None,
@@ -129,21 +127,15 @@ def draw_paths(
     for i in range(len(path) - 1):
         start = path[i]
         end = path[i + 1]
-        color = rgb_color
-        if problem:
-            d = problem.calculate_distance(start, end)
-        else:
-            d = calculate_distance(start, end, cities_locations, vias_proibidas)
+        color = rgb_color    
+        d = calculate_distance(start, end, cities_locations, vias_proibidas)
         since_last_refuel += d
 
-        if postos_abastecimento and since_last_refuel > MAX_DISTANCE:
-            if problem:
-                posto = problem.get_nearest_fuel_station(start)
-            else:
-                posto = min(
-                    postos_abastecimento,
-                    key=lambda p: calculate_distance(start, p, cities_locations),
-                )
+        if postos_abastecimento and since_last_refuel > MAX_DISTANCE:            
+            posto = min(
+                postos_abastecimento,
+                key=lambda p: calculate_distance(start, p, cities_locations),
+            )
             pygame.draw.line(
                 screen, (0, 128, 128), start, posto, 2
             )  # linha até o posto
