@@ -33,8 +33,14 @@ from genetic_algorithm import (
     tournament_selection,
 )
 
+_isllmintegrationEnabled = False
+
+if _isllmintegrationEnabled:
+    from llm_integration import get_llmSolution
+    from ui import render_markdown_line, ScrollableMarkdownArea
+
 # ------------------------- CONSTANTES -------------------------
-SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 700
+SCREEN_WIDTH, SCREEN_HEIGHT, RESULTS_AREA_HEIGHT = 1200, 700, 300
 NODE_RADIUS = 10
 FPS = 30
 
@@ -94,6 +100,10 @@ input_rects = {
 restricao_via_proibida = False
 restricao_cidade_prioritaria = False
 restricao_abastecimento = False
+
+# Variáveis para armazenar as soluções finais exibidas
+final_displayed_solutions = [None] * NUM_VEHICLES
+final_displayed_fitness = [None] * NUM_VEHICLES
 
 
 def aplicar_cidade_prioritaria(route, prioridades):
@@ -461,6 +471,9 @@ while running:
             )
             best_solution = population[0]
 
+            final_displayed_solutions[v] = best_solution
+            final_displayed_fitness[v] = best_fitness
+
             if (
                 len(vehicle_best_solutions[v]) == 0
                 or vehicle_best_solutions[v][-1] != best_solution
@@ -613,6 +626,60 @@ while running:
 
     pygame.display.flip()
     clock.tick(FPS)
+
+# ------------------------- EXIBIR RESULTADOS FINAIS -------------------------
+# end_time = time.time()
+# print(f"Benchmark concluído após {MAX_GENERATIONS} gerações.")
+# print(f"Tempo total: {end_time - start_time:.2f} segundos")
+# print(f"Fitness final (distância total): {last_total_dist:.2f}")
+
+# Prepara os dados para o LLM
+solutions_data = []
+for v in range(NUM_VEHICLES):
+    best_solution = final_displayed_solutions[v]
+    best_distance = final_displayed_fitness[v]
+    # route = [city.name for city in best_solution]
+    
+    solutions_data.append({
+        "veiculo": v + 1,
+        "distancia": best_distance,
+        # "rota": route
+    })
+
+if _isllmintegrationEnabled:
+    # Obtém a resposta formatada do LLM
+    llm_result = get_llmSolution(solutions_data)
+
+    # Captura a tela atual antes de redimensionar
+    old_screen = screen.copy()
+
+    # Redimensiona a janela para incluir a área de resultados
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + RESULTS_AREA_HEIGHT))
+    pygame.display.set_caption("TSP Solver - Resultados Finais")
+
+    # Restaura o conteúdo anterior na parte superior
+    screen.blit(old_screen, (0, 0))
+
+    # Cria área de markdown com scroll na parte inferior
+    results_y = SCREEN_HEIGHT
+    markdown_area = ScrollableMarkdownArea(0, results_y, SCREEN_WIDTH, RESULTS_AREA_HEIGHT, screen)
+    markdown_area.render_markdown(llm_result)
+
+    pygame.display.flip()
+
+    # Aguarda o usuário fechar a janela
+    waiting = True
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                waiting = False
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+                waiting = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                markdown_area.handle_scroll(event)
+                markdown_area.render_markdown(llm_result)
+                pygame.display.flip()
+        clock.tick(30)
 
 pygame.quit()
 sys.exit()
