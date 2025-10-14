@@ -105,7 +105,7 @@ def calculate_fitness(
     distance_matrix: np.ndarray = None,
     city_to_index: dict = None,
     distance_limit: float = None,
-    vias_proibidas: List[City] =None,
+    vias_proibidas: List[Tuple[City, City]] =None,
     postos: List[City] = None,
 ) -> float:
     """
@@ -144,7 +144,7 @@ def calculate_fitness(
         a = path[i]
         b = path[i + 1]
 
-        if (a, b) in vias_proibidas or (b, a) in vias_proibidas:
+        if vias_proibidas and ((a, b) in vias_proibidas or (b, a) in vias_proibidas):
             distance = 1_000_000.0 + (len(path) * 1000) # Penalidade grande
             if _cache_enabled:
                 _fitness_cache[route_key] = distance
@@ -185,7 +185,9 @@ def calculate_fitness(
             distance += d
 
     if distance_limit is not None and distance > distance_limit:
-        distance += (distance - distance_limit) * 10
+        # Penalidade severa para garantir que rotas que excedem o limite sejam descartadas.
+        # O valor é alto o suficiente para superar qualquer rota válida.
+        distance = 1_000_000.0 + (distance - distance_limit)
 
     # --- Fim do cálculo do Fitness ---
 
@@ -229,6 +231,10 @@ def nearest_neighbor_heuristic(
     """
     Heurística vizinho mais próximo, mantendo depósito fixo no início e fim.
     """
+    # Se o cluster tiver 0 ou 1 cidade (além do depósito), retorna a rota simples.
+    if len(cities_in_cluster) <= 3: # Ex: [depot, city_A, depot] ou [depot, depot]
+        return cities_in_cluster
+
     cities = cities_in_cluster
     depot = cities[0]
 
@@ -236,7 +242,7 @@ def nearest_neighbor_heuristic(
         return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
     unvisited = cities[1:-1]  # exclui depósito do início e fim
-    current_city = cities[start_city_index]
+    current_city = unvisited[start_city_index - 1] # Ajusta o índice para a lista fatiada
     route = [depot, current_city]
     unvisited.remove(current_city)    
     visited = {current_city}
@@ -282,6 +288,10 @@ def order_crossover(
     """
     Order Crossover (OX) mantendo depósito fixo no início/fim.
     """
+    # Se os pais não tiverem cidades para cruzar (apenas depósito), retorna eles mesmos.
+    if len(parent1) <= 2 or len(parent2) <= 2:
+        return parent1, parent2
+
     depot = parent1[0]
     p1 = parent1[1:-1]  # remove depósito
     p2 = parent2[1:-1]
