@@ -13,6 +13,7 @@ import pygame
 import pylab
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
+from city import City
 from genetic_algorithm import calculate_distance
 
 matplotlib.use("Agg")
@@ -65,12 +66,12 @@ def draw_plot(
 
 def draw_cities(
     screen: pygame.Surface,
-    cities_locations: List[Tuple[int, int]],
+    cities: List[City],
     rgb_color: Tuple[int, int, int],
     node_radius: int,
-    depot: Tuple[int, int] = None,
-    cidades_prioritarias: List[Tuple[int, int]] = [],
-    postos: List[Tuple[int, int]] = [],
+    depot: City = None,
+    cidades_prioritarias: List[City] = [],
+    postos: List[City] = [],
 ) -> None:
     """
     Draws circles representing cities on the given Pygame screen.
@@ -88,26 +89,41 @@ def draw_cities(
     #    color = (0, 0, 0) if depot is not None and city_location == depot else rgb_color
     #    pygame.draw.circle(screen, color, city_location, node_radius)
 
+    # Fonte para os nomes das cidades
+    font = pygame.font.SysFont("Arial", 12)
+
     tamanho = node_radius * 2
-    for posto in postos:
-        x, y = posto
+    for posto_city in postos:
+        x, y = posto_city.get_coords()
         rect = pygame.Rect(x - tamanho // 2, y - tamanho // 2, tamanho, tamanho)
         pygame.draw.rect(screen, (0, 100, 0), rect)  # preenchimento
         pygame.draw.rect(screen, (0, 0, 0), rect, 2)
 
-    for city_location in cities_locations:
-        if depot is not None and city_location == depot:
+        # Desenha o nome do posto
+        text_surface = font.render(posto_city.name, True, (0, 0, 0))
+        text_rect = text_surface.get_rect(center=(x, y - node_radius - 5))
+        screen.blit(text_surface, text_rect)
+
+    for city_obj in cities:
+        if depot is not None and city_obj == depot:
             color = (0, 0, 0)
-        elif city_location in cidades_prioritarias:
+        elif city_obj in cidades_prioritarias:
             color = (128, 0, 128)  # roxo
         else:
             color = rgb_color
-        pygame.draw.circle(screen, color, city_location, node_radius)
+        
+        coords = city_obj.get_coords()
+        pygame.draw.circle(screen, color, coords, node_radius)
 
+        # Desenha o nome da cidade, exceto para o depósito
+        if city_obj.name != "Depot":
+            text_surface = font.render(city_obj.name, True, (0, 0, 0))
+            text_rect = text_surface.get_rect(center=(coords[0], coords[1] - node_radius - 8))
+            screen.blit(text_surface, text_rect)
 
 def draw_paths(
     screen: pygame.Surface,
-    path: List[Tuple[int, int]],
+    path: List[City],
     rgb_color: Tuple[int, int, int],
     width: int = 1,    
     vias_proibidas: List[Tuple[int, int]] = None,
@@ -119,9 +135,11 @@ def draw_paths(
     desenha essas arestas proibidas com cor diferente (roxo).
     Note: cities_locations deve conter os pontos correspondentes a path (pode ser scaled).
     """
-
-    for start, end in vias_proibidas:
-        pygame.draw.line(screen, (128, 0, 128), start, end, width=3)
+    
+    #TODO: vias_proibidas também deveria usar objetos City
+    if vias_proibidas:
+        for start, end in vias_proibidas:
+            pygame.draw.line(screen, (128, 0, 128), start.get_coords(), end.get_coords(), width=3)
 
     since_last_refuel = 0
     for i in range(len(path) - 1):
@@ -137,14 +155,14 @@ def draw_paths(
                 key=lambda p: calculate_distance(start, p, cities_locations),
             )
             pygame.draw.line(
-                screen, (0, 128, 128), start, posto, 2
+                screen, (0, 128, 128), start.get_coords(), posto.get_coords(), 2
             )  # linha até o posto
             pygame.draw.line(
-                screen, (0, 128, 128), posto, end, 2
+                screen, (0, 128, 128), posto.get_coords(), end.get_coords(), 2
             )  # linha de volta à rota
             since_last_refuel = 0
         else:
-            pygame.draw.line(screen, color, start, end, width)
+            pygame.draw.line(screen, color, start.get_coords(), end.get_coords(), width)
 
 
 def draw_text(

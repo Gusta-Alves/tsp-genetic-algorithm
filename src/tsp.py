@@ -9,6 +9,7 @@ TSP Solver com múltiplos veículos usando GA
 - Lado direito da tela: mapa das cidades
 - 3 checkboxes ao lado da tabela para controlar restrições
 """
+from city import City
 
 import itertools
 import sys
@@ -59,6 +60,16 @@ RIGHT_PANEL_WIDTH = SCREEN_WIDTH - LEFT_PANEL_WIDTH
 GRAPH_HEIGHT = 400
 TABLE_HEIGHT = 200
 
+# Lista de nomes de cidades para atribuição aleatória
+CITY_NAMES = [
+    "São Paulo", "Chicago", "Tokyo", "London", "Paris", "New York", "Sydney", "Cairo",
+    "Moscow", "Beijing", "Rio de Janeiro", "Dubai", "Rome", "Berlin", "Toronto", "Mumbai",
+    "Los Angeles", "Mexico City", "Buenos Aires", "Istanbul", "Seoul", "Jakarta", "Lagos",
+    "Kinshasa", "Lima", "Bogota", "Bangkok", "Tehran", "Madrid", "Santiago", "Singapore",
+    "Hong Kong", "Kyiv", "Vienna", "Amsterdam", "Stockholm", "Oslo", "Copenhagen", "Helsinki",
+    "Dublin", "Lisbon", "Athens", "Prague", "Budapest", "Warsaw", "Bucharest", "Sofia"
+]
+
 # ------------------------- RESTRIÇÕES -------------------------
 checkboxes = [
     {
@@ -103,8 +114,8 @@ restricao_cidade_prioritaria = False
 restricao_abastecimento = False
 
 # Variáveis para armazenar as soluções finais exibidas
-final_displayed_solutions = [None] * NUM_VEHICLES
-final_displayed_fitness = [None] * NUM_VEHICLES
+final_displayed_solutions = [None] * 5
+final_displayed_fitness = [None] * 5
 
 
 def aplicar_cidade_prioritaria(route, prioridades):
@@ -116,7 +127,7 @@ def aplicar_cidade_prioritaria(route, prioridades):
     for cidade in prioridades:
         if cidade in rest:
             rest.remove(cidade)
-            rest = [cidade] + rest  # coloca prioridade no início
+            rest.insert(0, cidade) # coloca prioridade no início
     return [depot] + rest + [depot]
 
 
@@ -124,20 +135,26 @@ def set_cidadesPrioritarias():
     global cidades_prioritarias
     cidades_prioritarias = []
     if restricao_cidade_prioritaria:
-        cidades_prioritarias = [(944, 420), (674, 369), (900, 186), (1120, 418)]
-        cidades_prioritarias = [tuple(c) for c in cidades_prioritarias]
+        # Coordenadas prioritárias (baseadas na escala do mapa)
+        priority_coords = [(944, 420), (674, 369), (900, 186), (1120, 418)]
+        # Encontra os objetos City correspondentes na lista global de cidades
+        cidades_prioritarias = [c for c in cities if c.get_coords() in priority_coords]
+
 
 
 def set_viaProibida():
     global vias_proibidas
     vias_proibidas = []
     if restricao_via_proibida:
-        vias_proibidas = [
-            ((814, 371), (877, 314)),
-            ((779, 271), (784, 237)),
-            ((1013, 176), (1014, 126)),
-            ((1100, 480), (1108, 562)),
-        ]
+        # Para cada cluster, seleciona uma via aleatória para proibir.
+        # Isso garante que a via proibida seja relevante para a rota de um veículo.
+        for cluster in vehicle_clusters:
+            # Pega apenas as cidades do cluster, excluindo o depósito
+            cities_in_cluster = [city for city in cluster if city.name != "Depot"]
+            if len(cities_in_cluster) >= 2:
+                # Seleciona duas cidades aleatórias para proibir a rota entre elas
+                city1, city2 = random.sample(cities_in_cluster, 2)
+                vias_proibidas.append((city1, city2))
 
 
 def inserir_paradas(route, postos, alcance_maximo):
@@ -169,8 +186,9 @@ def set_PostosAbastecimento():
     global postos_abastecimento
     postos_abastecimento = []
     if restricao_abastecimento:
-        postos_abastecimento = [(710, 150), (840, 400), (1140, 180), (1040, 520)]
-        postos_abastecimento = [tuple(c) for c in postos_abastecimento]
+        # Cria objetos City para os postos
+        posto_coords = [(710, 150), (840, 400), (1140, 180), (1040, 520)]
+        postos_abastecimento = [City(f"Posto {i+1}", c[0], c[1]) for i, c in enumerate(posto_coords)]
 
 
 def set_restricao(tipo, val):
@@ -186,40 +204,46 @@ def set_restricao(tipo, val):
 
 # ------------------------- PREPARAR CIDADES -------------------------
 def prepare_cities():
-    global cities_locations, vehicle_clusters, vehicle_populations, depot
+    global cities, vehicle_clusters, vehicle_populations, depot
                     
     #cidades_ativas = att_48_cities_locations[:NUM_CITIES]
     cidades_ativas = random.sample(att_48_cities_locations, NUM_CITIES)
-    att_cities_locations = np.array(cidades_ativas)
-    max_x = max(point[0] for point in att_cities_locations)
-    max_y = max(point[1] for point in att_cities_locations)
+
+    # Embaralha a lista de nomes para garantir uma atribuição aleatória a cada execução
+    random.shuffle(CITY_NAMES)
+    
+    max_x = max(point[0] for point in cidades_ativas)
+    max_y = max(point[1] for point in cidades_ativas)
 
     scale_x = (RIGHT_PANEL_WIDTH - MARGIN * 2 - NODE_RADIUS) / max_x
     scale_y = (SCREEN_HEIGHT - MARGIN * 2 - NODE_RADIUS) / max_y
 
-    cities_locations = [
-        (
-            int(point[0] * scale_x + LEFT_PANEL_WIDTH + MARGIN),
-            int(point[1] * scale_y + MARGIN),
+    cities = [
+        City(
+            name=CITY_NAMES[i - 1],
+            x=int(c[0] * scale_x + LEFT_PANEL_WIDTH + MARGIN),
+            y=int(c[1] * scale_y + MARGIN)
         )
-        for point in att_cities_locations
+        for i, c in enumerate(cidades_ativas)
     ]
 
-    depot_x = int(np.mean([x for x, y in cities_locations]))
-    depot_y = int(np.mean([y for x, y in cities_locations]))
-    depot = (depot_x, depot_y)
+    depot_x = int(np.mean([c.x for c in cities]))
+    depot_y = int(np.mean([c.y for c in cities]))
+    depot = City("Depot", depot_x, depot_y)
 
-    cities_array = np.array(cities_locations)
+    # Usa as coordenadas para o K-Means
+    cities_coords_array = np.array([c.get_coords() for c in cities])
     kmeans = KMeans(n_clusters=NUM_VEHICLES, random_state=72)
-    kmeans.fit(cities_array)
+    kmeans.fit(cities_coords_array)
     labels = kmeans.labels_
 
     vehicle_clusters = [[] for _ in range(NUM_VEHICLES)]
     for idx, label in enumerate(labels):
-        vehicle_clusters[label].append(cities_locations[idx])
+        vehicle_clusters[label].append(cities[idx])
     for i in range(NUM_VEHICLES):
         vehicle_clusters[i] = [depot] + vehicle_clusters[i] + [depot]
 
+    # Inicializa populações para cada veículo
     vehicle_populations = []
     for cluster in vehicle_clusters:
         population = []
@@ -230,7 +254,7 @@ def prepare_cities():
                 sol = aplicar_cidade_prioritaria(sol, cidades_prioritarias)
             population.append(sol)
         # População aleatória restante
-        random_population = generate_random_population(
+        random_population = generate_random_population( # Passa a lista de City
             cluster, POPULATION_SIZE - len(population)
         )
         if restricao_cidade_prioritaria:
@@ -257,10 +281,10 @@ def reiniciar_GA():
     vehicle_last_change = [0] * NUM_VEHICLES    
     generation_counter = itertools.count(start=1)    
     vehicle_info = []
+    prepare_cities()
     set_viaProibida()
     set_cidadesPrioritarias()
-    set_PostosAbastecimento()    
-    prepare_cities()
+    set_PostosAbastecimento()
 
 # ------------------------- LOOP PRINCIPAL -------------------------
 
@@ -463,14 +487,14 @@ while running:
 
             population_fitness = [
                 calculate_fitness(
-                    ind, cities_locations, vias_proibidas, postos_abastecimento
+                    ind, cities, vias_proibidas, postos_abastecimento
                 )
                 for ind in population
             ]
             population, population_fitness = sort_population(population, population_fitness)
 
             best_fitness = calculate_fitness(
-                population[0], cities_locations, vias_proibidas, postos_abastecimento
+                population[0], cities, vias_proibidas, postos_abastecimento
             )
             best_solution = population[0]
 
@@ -494,8 +518,8 @@ while running:
                 best_solution,
                 VEHICLE_COLORS[v],
                 width=3,
-                vias_proibidas=vias_proibidas if restricao_via_proibida else [],
-                cities_locations=cities_locations,
+                vias_proibidas=vias_proibidas if restricao_via_proibida else None,
+                cities_locations=cities,
                 postos_abastecimento=postos_abastecimento,
             )
 
@@ -645,12 +669,12 @@ solutions_data = []
 for v in range(NUM_VEHICLES):
     best_solution = final_displayed_solutions[v]
     best_distance = final_displayed_fitness[v]
-    # route = [city.name for city in best_solution]
+    route = [city.name for city in best_solution]
     
     solutions_data.append({
         "veiculo": v + 1,
         "distancia": best_distance,
-        # "rota": route
+        "rota": route
     })
 
 if _isllmintegrationEnabled:
