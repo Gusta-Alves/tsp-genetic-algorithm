@@ -26,7 +26,6 @@ def calculate_distance(
 
 def calculate_fitness(
     path: List[City],
-    cities_location=None,
     vias_proibidas=None,
     postos: List[Tuple[float, float]] = None,
 ) -> float:
@@ -77,23 +76,6 @@ def calculate_fitness(
 
     return distance
 
-
-class FitnessCalculator:
-    """Calculates fitness for TSP routes."""
-
-    def calculate_fitness(self, route: List[Tuple[float, float]]) -> float:
-        """
-        Calculate fitness of a route.
-
-        Args:
-            route: The route to evaluate
-
-        Returns:
-            Fitness value (lower is better)
-        """
-        return self.problem.calculate_route_distance(route)
-
-
 # ------------------------- POPULAÇÃO -------------------------
 
 
@@ -123,9 +105,7 @@ def generate_random_population(
 
 def nearest_neighbor_heuristic(
     cities: List[City],
-    start_city_index: int = 1,
-    cities_compare=None,
-    vias_proibidas=None,
+    start_city_index: int = 1   
 ) -> List[Tuple[float, float]]:
     """
     Heurística vizinho mais próximo, mantendo depósito fixo no início e fim.

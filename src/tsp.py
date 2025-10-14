@@ -17,9 +17,11 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 import pygame
+import screeninfo, os
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from pygame.locals import *
 from sklearn.cluster import KMeans
+from screeninfo import get_monitors
 
 from benchmark_att48 import *
 from draw_functions import draw_cities, draw_paths
@@ -34,7 +36,15 @@ from genetic_algorithm import (
     tournament_selection,
 )
 
-_isllmintegrationEnabled = True
+monitor = get_monitors()[0]
+screen_width = monitor.width
+window_width = 1200
+x = (screen_width - window_width) // 2
+y = 30
+
+os.environ['SDL_VIDEO_WINDOW_POS'] = f"{x},{y}"
+
+_isllmintegrationEnabled = False
 
 if _isllmintegrationEnabled:
     from llm_integration import get_llmSolution
@@ -88,7 +98,7 @@ checkboxes = [
     },
     {
         "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 80, 20, 20),
-        "text": "Abastecimento (>900)",
+        "text": f"Abastecer (> {MAX_DISTANCE})",
         "value": lambda: restricao_abastecimento,
         "set": lambda val: set_restricao("max", val),
         "enabled": True,
@@ -299,6 +309,8 @@ active_input = None
 nCounter = 0
 
 while running:
+
+    # ----------------------------------- INTERAÇÕES DE TELA ----------------------------------
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -485,22 +497,27 @@ while running:
         for v in range(NUM_VEHICLES):
             population = vehicle_populations[v]
 
+            if restricao_cidade_prioritaria:
+                population = [
+                    aplicar_cidade_prioritaria(ind, cidades_prioritarias)
+                    for ind in population
+                ]
+
             population_fitness = [
                 calculate_fitness(
-                    ind, cities, vias_proibidas, postos_abastecimento
+                    ind, vias_proibidas, postos_abastecimento
                 )
                 for ind in population
             ]
             population, population_fitness = sort_population(population, population_fitness)
-
-            best_fitness = calculate_fitness(
-                population[0], cities, vias_proibidas, postos_abastecimento
-            )
+            
+            best_fitness = population_fitness[0]            
             best_solution = population[0]
 
             final_displayed_solutions[v] = best_solution
             final_displayed_fitness[v] = best_fitness
 
+            # Se melhorou a solução, atualiza a geração da última mudança
             if (
                 len(vehicle_best_solutions[v]) == 0
                 or vehicle_best_solutions[v][-1] != best_solution
@@ -677,7 +694,7 @@ for v in range(NUM_VEHICLES):
         "rota": route
     })
 
-if _isllmintegrationEnabled:
+if _isllmintegrationEnabled and nCounter >= MAX_GENERATIONS:
     # Obtém a resposta formatada do LLM
     llm_result = get_llmSolution(solutions_data)
 
