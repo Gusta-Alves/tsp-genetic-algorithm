@@ -52,6 +52,7 @@ VEHICLE_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0),(160, 32,
 MARGIN = 50
 PROHIBITED_PENALTY = 1e6
 MAX_DISTANCE = 900
+MAX_GENERATIONS = 100
 
 LEFT_PANEL_WIDTH = 500
 RIGHT_PANEL_WIDTH = SCREEN_WIDTH - LEFT_PANEL_WIDTH
@@ -271,6 +272,7 @@ color_cidades = (210, 210, 210)
 btn_text = "EDITAR"
 running = True
 active_input = None
+nCounter = 0
 
 while running:
     for event in pygame.event.get():
@@ -368,6 +370,7 @@ while running:
             
     generation = next(generation_counter)
     screen.fill((255, 255, 255))
+    nCounter += 1
 
     # ----------------- DESENHAR CHECKBOXES -----------------
     font = pygame.font.SysFont("Arial", 18)
@@ -479,6 +482,7 @@ while running:
                 or vehicle_best_solutions[v][-1] != best_solution
             ):
                 vehicle_last_change[v] = generation
+                nCounter = 0
 
             vehicle_best_fitness[v].append(best_fitness)
             vehicle_best_solutions[v].append(best_solution)
@@ -623,6 +627,9 @@ while running:
         pygame.draw.rect(screen, (0, 0, 0), (x, y, col_widths[col], row_height), 2)
         text_surface = font.render(val, True, (0, 0, 0))
         screen.blit(text_surface, (x + 5, y + 5))
+
+    if nCounter >= MAX_GENERATIONS:
+        running = False
 
     pygame.display.flip()
     clock.tick(FPS)
