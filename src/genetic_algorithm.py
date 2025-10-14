@@ -13,9 +13,7 @@ from city import City
 PROHIBITED_PENALTY = 100000
 def calculate_distance(
     point1: City,
-    point2: City,
-    cities_location=None,
-    vias_proibidas=None,
+    point2: City    
 ) -> float:
     """
     Distância Euclidiana entre dois pontos.
@@ -49,7 +47,7 @@ def calculate_fitness(
         if vias_proibidas and ((city_a, city_b) in vias_proibidas or (city_b, city_a) in vias_proibidas):
             return PROHIBITED_PENALTY
 
-        d = calculate_distance(city_a, city_b, cities_location, vias_proibidas)
+        d = calculate_distance(city_a, city_b)
         distance += d
 
         # Penaliza rotas que visitam a mesma cidade mais de uma vez (exceto o depósito no final)
@@ -64,13 +62,13 @@ def calculate_fitness(
         if postos and since_last_refuel > 900:  # MAX_DISTANCE
             posto_proximo = min(
                 postos,
-                key=lambda p: calculate_distance(city_a, p, cities_location, vias_proibidas),
+                key=lambda p: calculate_distance(city_a, p)
             )
             d_posto = calculate_distance(
-                city_a, posto_proximo, cities_location, vias_proibidas
+                city_a, posto_proximo
             )
             d_volta = calculate_distance(
-                posto_proximo, city_b, cities_location, vias_proibidas
+                posto_proximo, city_b
             )
             distance += (
                 d_posto + d_volta

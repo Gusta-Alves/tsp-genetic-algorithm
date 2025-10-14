@@ -88,7 +88,7 @@ checkboxes = [
     },
     {
         "rect": pygame.Rect(LEFT_PANEL_WIDTH + 20, GRAPH_HEIGHT + 80, 20, 20),
-        "text": "Parada para Abastecer",
+        "text": "Abastecimento (>900)",
         "value": lambda: restricao_abastecimento,
         "set": lambda val: set_restricao("max", val),
         "enabled": True,
@@ -166,7 +166,7 @@ def inserir_paradas(route, postos, alcance_maximo):
 
     for i in range(len(route) - 1):
         p1, p2 = route[i], route[i + 1]
-        d = calculate_distance(p1, p2, cities_locations, vias_proibidas)
+        d = calculate_distance(p1, p2)
 
         if d < PROHIBITED_PENALTY:
             distancia_acumulada += d

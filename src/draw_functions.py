@@ -146,13 +146,13 @@ def draw_paths(
         start = path[i]
         end = path[i + 1]
         color = rgb_color    
-        d = calculate_distance(start, end, cities_locations, vias_proibidas)
+        d = calculate_distance(start, end)
         since_last_refuel += d
 
         if postos_abastecimento and since_last_refuel > MAX_DISTANCE:            
             posto = min(
                 postos_abastecimento,
-                key=lambda p: calculate_distance(start, p, cities_locations),
+                key=lambda p: calculate_distance(start, p),
             )
             pygame.draw.line(
                 screen, (0, 128, 128), start.get_coords(), posto.get_coords(), 2
