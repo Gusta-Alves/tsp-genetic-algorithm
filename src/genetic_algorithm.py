@@ -9,22 +9,25 @@ import copy
 import math
 import random
 from typing import List, Protocol, Tuple
-
+from city import City
+PROHIBITED_PENALTY = 100000
 def calculate_distance(
-    point1: Tuple[float, float],
-    point2: Tuple[float, float],
+    point1: City,
+    point2: City,
     cities_location=None,
     vias_proibidas=None,
 ) -> float:
     """
     Distância Euclidiana entre dois pontos.
-    Função mantida para compatibilidade com código legado.
+    Agora usa objetos City.
     """
-    return math.hypot(point1[0] - point2[0], point1[1] - point2[1])
+    p1_coords = point1.get_coords()
+    p2_coords = point2.get_coords()
+    return math.hypot(p1_coords[0] - p2_coords[0], p1_coords[1] - p2_coords[1])
 
 
 def calculate_fitness(
-    path: List[Tuple[float, float]],
+    path: List[City],
     cities_location=None,
     vias_proibidas=None,
     postos: List[Tuple[float, float]] = None,
@@ -39,18 +42,20 @@ def calculate_fitness(
     visited = set()
 
     for i in range(n):
-        a = path[i]
-        b = path[(i + 1) % n]
+        # O caminho é circular, então a última cidade se conecta à primeira
+        city_a = path[i]
+        city_b = path[(i + 1) % n]
 
-        if (a, b) in vias_proibidas or (b, a) in vias_proibidas:
-            return 1000000.0  # penalidade grande
+        if vias_proibidas and ((city_a, city_b) in vias_proibidas or (city_b, city_a) in vias_proibidas):
+            return PROHIBITED_PENALTY
 
-        d = calculate_distance(a, b, cities_location, vias_proibidas)
+        d = calculate_distance(city_a, city_b, cities_location, vias_proibidas)
         distance += d
 
-        if b in visited and b != path[0]:  # exclui depósito
-            return 1000000.0  # penalidade grande
-        visited.add(b)
+        # Penaliza rotas que visitam a mesma cidade mais de uma vez (exceto o depósito no final)
+        if city_b in visited and city_b != path[0]:
+            return PROHIBITED_PENALTY
+        visited.add(city_b)
 
         if d < 1000000.0:
             since_last_refuel += d
@@ -59,13 +64,13 @@ def calculate_fitness(
         if postos and since_last_refuel > 900:  # MAX_DISTANCE
             posto_proximo = min(
                 postos,
-                key=lambda p: calculate_distance(a, p, cities_location, vias_proibidas),
+                key=lambda p: calculate_distance(city_a, p, cities_location, vias_proibidas),
             )
             d_posto = calculate_distance(
-                a, posto_proximo, cities_location, vias_proibidas
+                city_a, posto_proximo, cities_location, vias_proibidas
             )
             d_volta = calculate_distance(
-                posto_proximo, b, cities_location, vias_proibidas
+                posto_proximo, city_b, cities_location, vias_proibidas
             )
             distance += (
                 d_posto + d_volta
@@ -95,7 +100,7 @@ class FitnessCalculator:
 
 
 def generate_random_population(
-    problem_or_cities, population_size: int
+    cities: List[City], population_size: int
 ) -> List[List[Tuple[float, float]]]:
     """
     Gera população aleatória de rotas.
@@ -103,13 +108,12 @@ def generate_random_population(
     Suporta tanto TSPProblem quanto lista de cidades (para compatibilidade).
     """
   
-    cities = problem_or_cities
     depot = cities[0]
-    cities = cities[1:-1]  # Exclui depósito para embaralhar
-
+    cities_to_shuffle = cities[1:-1]  # Exclui depósito para embaralhar
+    
     population = []
     for _ in range(population_size):
-        route = cities[:]
+        route = cities_to_shuffle[:]
         random.shuffle(route)
         route = [depot] + route + [depot]
         population.append(route)
@@ -120,7 +124,7 @@ def generate_random_population(
 
 
 def nearest_neighbor_heuristic(
-    problem_or_cities,
+    cities: List[City],
     start_city_index: int = 1,
     cities_compare=None,
     vias_proibidas=None,
@@ -130,15 +134,11 @@ def nearest_neighbor_heuristic(
     Suporta tanto TSPProblem quanto lista de cidades (para compatibilidade).
     """
    
-    # Modo legado
-    cities = problem_or_cities
     depot = cities[0]
-    cities = cities  # usa cities_compare se fornecido
-    if cities_compare:
-        cities = cities_compare
 
     def calculate_dist(p1, p2):
-        return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+        p1_coords, p2_coords = p1.get_coords(), p2.get_coords()
+        return math.hypot(p1_coords[0] - p2_coords[0], p1_coords[1] - p2_coords[1])
 
     unvisited = cities[1:-1]  # exclui depósito
     current_city = cities[start_city_index]
@@ -167,10 +167,10 @@ def nearest_neighbor_heuristic(
 
 
 def tournament_selection(
-    population: List[List[Tuple[float, float]]],
+    population: List[List[City]],
     population_fitness: List[float],
     tournament_size: int = 3,
-) -> List[Tuple[float, float]]:
+) -> List[City]:
     """Seleciona melhor indivíduo entre aleatoriamente escolhidos."""
     tournament_indices = random.sample(range(len(population)), tournament_size)
     tournament_fitness = [population_fitness[i] for i in tournament_indices]
@@ -182,8 +182,8 @@ def tournament_selection(
 
 
 def order_crossover(
-    parent1: List[Tuple[float, float]], parent2: List[Tuple[float, float]]
-) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
+    parent1: List[City], parent2: List[City]
+) -> Tuple[List[City], List[City]]:
     """
     Order Crossover (OX) mantendo depósito fixo no início/fim.
     """
@@ -219,9 +219,7 @@ def order_crossover(
 # ------------------------- MUTATION -------------------------
 
 
-def mutate(
-    solution: List[Tuple[float, float]], mutation_probability: float
-) -> List[Tuple[float, float]]:
+def mutate(solution: List[City], mutation_probability: float) -> List[City]:
     """Mutação simples: swap, reverse ou 2-opt, mantendo depósito fixo."""
     mutated_solution = copy.deepcopy(solution)
     if random.random() < mutation_probability:
@@ -245,8 +243,8 @@ def mutate(
 
 
 def sort_population(
-    population: List[List[Tuple[float, float]]], fitness: List[float]
-) -> Tuple[List[List[Tuple[float, float]]], List[float]]:
+    population: List[List[City]], fitness: List[float]
+) -> Tuple[List[List[City]], List[float]]:
     """Ordena população por fitness (menor é melhor)."""
     combined = list(zip(population, fitness))
     combined.sort(key=lambda x: x[1])
