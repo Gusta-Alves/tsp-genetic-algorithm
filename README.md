@@ -1,144 +1,144 @@
-# TSP Solver com Múltiplos Veículos usando Algoritmo Genético
+# Multi-Vehicle TSP Solver Using Genetic Algorithm
 
-Este repositório contém uma implementação Python de um solver para o Problema do Caixeiro Viajante (TSP) com múltiplos veículos usando Algoritmo Genético (GA). O sistema utiliza clustering para dividir cidades entre veículos e otimiza as rotas simultaneamente com visualização em tempo real.
+This repository contains a Python implementation of a Traveling Salesman Problem (TSP) solver with multiple vehicles using a Genetic Algorithm (GA). The system uses clustering to divide cities among vehicles and optimizes routes simultaneously with real-time visualization.
 
-## 🎯 Visão Geral
+## 🎯 Overview
 
-O solver emprega um Algoritmo Genético para evoluir iterativamente uma população de soluções candidatas em direção a rotas ótimas ou quase-ótimas. O sistema suporta:
+The solver employs a Genetic Algorithm to iteratively evolve a population of candidate solutions towards optimal or near-optimal routes. The system supports:
 
-- **Múltiplos Veículos**: Até 5 veículos operando simultaneamente
-- **Clustering Inteligente**: Divisão automática de cidades usando K-Means
-- **Restrições Configuráveis**: Vias proibidas, cidades prioritárias e limitação de distância
-- **Visualização em Tempo Real**: Interface gráfica interativa com Pygame
-- **Elitismo Avançado**: Preservação dos 5 melhores indivíduos entre gerações
+- **Multiple Vehicles**: Up to 5 vehicles operating simultaneously
+- **Intelligent Clustering**: Automatic city division using K-Means
+- **Configurable Constraints**: Prohibited routes, priority cities, and distance limitations
+- **Real-Time Visualization**: Interactive graphical interface with Pygame
+- **Elitism**: Preservation of the best individual across generations
 
-## 📁 Estrutura do Projeto
+## 📁 Project Structure
 
 ```
 src/
-├── tsp.py                  # Aplicação principal com interface Pygame
-├── genetic_algorithm.py    # Operações do algoritmo genético (seleção, crossover, mutação)
-├── city.py                 # Classe City para representação de cidades
-├── draw_functions.py       # Funções de desenho e visualização
-├── benchmark_att48.py      # Dataset benchmark ATT48 (48 cidades)
-├── llm_integration.py      # Integração com LLM para análise de resultados (opcional)
-└── ui.py                   # Componentes de UI (área de scroll, markdown)
+├── tsp.py                  # Main application with Pygame interface
+├── genetic_algorithm.py    # Genetic algorithm operations (selection, crossover, mutation)
+├── city.py                 # City class for city representation
+├── draw_functions.py       # Drawing and visualization functions
+├── benchmark_att48.py      # ATT48 benchmark dataset (48 cities)
+├── llm_integration.py      # LLM integration for result analysis (optional)
+└── ui.py                   # UI components (scroll area, markdown)
 ```
 
-## 🚀 Funcionalidades Principais
+## 🚀 Key Features
 
-### Algoritmo Genético
-- **População**: 100 indivíduos por veículo
-- **Elitismo**: A melhor solução preservada por geração
-- **Seleção**: Torneio
+### Genetic Algorithm
+- **Population**: 100 individuals per vehicle
+- **Elitism**: Best solution preserved per generation
+- **Selection**: Tournament selection
 - **Crossover**: Order Crossover (OX)
-- **Mutação**: Taxa de 50% com swap de cidades
-- **Inicialização**: Heurística nearest-neighbor + população aleatória
+- **Mutation**: 50% rate with city swap
+- **Initialization**: Nearest-neighbor heuristic + random population
 
-### Restrições Operacionais
-1. **Via Proibida**: Proíbe rotas específicas entre pares de cidades
-2. **Cidade Prioritária**: Força visita prioritária a certas cidades logo após o depósito
-3. **Limitação de Distância**: Adiciona paradas obrigatórias em postos de abastecimento quando a distância acumulada excede 900 unidades
+### Operational Constraints
+1. **Prohibited Routes**: Forbids specific routes between city pairs
+2. **Priority City**: Forces priority visits to certain cities right after the depot
+3. **Distance Limitation**: Adds mandatory stops at refueling stations when accumulated distance exceeds 900 units
 
-### Interface Interativa
-- **Painel Esquerdo**: Gráfico de evolução de fitness e tabela de informações dos veículos
-- **Painel Direito**: Visualização do mapa com rotas coloridas por veículo
-- **Controles**: 
-  - Checkboxes para ativar/desativar restrições
-  - Inputs para configurar número de veículos (1-5) e cidades (8-48)
-  - Botões EDITAR e RESET para configuração em tempo real
+### Interactive Interface
+- **Left Panel**: Fitness evolution graph and vehicle information table
+- **Right Panel**: Map visualization with color-coded routes per vehicle
+- **Controls**: 
+  - Checkboxes to enable/disable constraints
+  - Inputs to configure number of vehicles (1-5) and cities (8-48)
+  - EDIT and RESET buttons for real-time configuration
 
-## 📦 Dependências
+## 📦 Dependencies
 
 ```bash
 numpy>=1.21.0
 pygame>=2.0.0
 matplotlib>=3.5.0
 scikit-learn>=1.0.0
-openai>=1.0.0           # Opcional para integração LLM
-python-dotenv>=1.0.0    # Opcional para integração LLM
+openai>=1.0.0           # Optional for LLM integration
+python-dotenv>=1.0.0    # Optional for LLM integration
 screeninfo>=0.8.1
 ```
 
-## 🔧 Instalação
+## 🔧 Installation
 
-1. Clone o repositório:
+1. Clone the repository:
 ```bash
 git clone https://github.com/Gusta-Alves/tsp-genetic-algorithm.git
 cd tsp-genetic-algorithm
 ```
 
-2. Crie e ative um ambiente virtual:
+2. Create and activate a virtual environment:
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # No Windows: .venv\Scripts\activate
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-3. Instale as dependências:
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-## 🎮 Como Usar
+## 🎮 How to Use
 
-Execute o arquivo principal:
+Run the main file:
 ```bash
 python src/tsp.py
 ```
 
-### Controles da Interface
+### Interface Controls
 
-- **Checkboxes**: Clique para ativar/desativar restrições (disponível apenas para 4 veículos e 48 cidades)
-- **Botão EDITAR**: Ativa modo de edição para modificar número de veículos e cidades
-- **Botão RESET**: Restaura configurações padrão (4 veículos, 48 cidades, sem restrições)
-- **Tecla Q**: Fecha a aplicação
-- **Clique X**: Fecha a aplicação
+- **Checkboxes**: Click to enable/disable constraints (available only for 4 vehicles and 48 cities)
+- **EDIT Button**: Activates edit mode to modify number of vehicles and cities
+- **RESET Button**: Restores default settings (4 vehicles, 48 cities, no constraints)
+- **Q Key**: Closes the application
+- **X Click**: Closes the application
 
-### Configuração Personalizada
+### Custom Configuration
 
-Durante o modo de edição, você pode:
-- Definir de 1 a 5 veículos
-- Definir de 8 a 48 cidades (mínimo = veículos × 2)
-- Aplicar ou remover restrições operacionais
+During edit mode, you can:
+- Set 1 to 5 vehicles
+- Set 8 to 48 cities (minimum = vehicles × 2)
+- Apply or remove operational constraints
 
 ## 📊 Dataset
 
-O projeto utiliza o benchmark **ATT48** com 48 cidades, um problema clássico de TSP amplamente usado para testes de algoritmos de otimização.
+The project uses the **ATT48** benchmark with 48 cities, a classic TSP problem widely used for testing optimization algorithms.
 
-## 🎨 Visualização
+## 🎨 Visualization
 
-- Cada veículo possui uma cor única
-- O depósito central é calculado como o centroide de todas as cidades
-- Rotas são desenhadas em tempo real mostrando a evolução do algoritmo
-- Gráfico de fitness mostra a convergência ao longo das gerações
-- Tabela exibe distância, número de cidades e última mudança por veículo
+- Each vehicle has a unique color
+- The central depot is calculated as the centroid of all cities
+- Routes are drawn in real-time showing the algorithm's evolution
+- Fitness graph shows convergence over generations
+- Table displays distance, number of cities, and last change per vehicle
 
-## 🤖 Integração LLM (Opcional)
+## 🤖 LLM Integration (Optional)
 
-O sistema pode integrar-se com modelos de linguagem (OpenAI) para análise e formatação de resultados. Para ativar:
+The system can integrate with language models (OpenAI) for result analysis and formatting. To activate:
 
-1. Configure `_isllmintegrationEnabled = True` em `tsp.py`
-2. Crie arquivo `.env` com sua chave API:
+1. Set `_isllmintegrationEnabled = True` in `tsp.py`
+2. Create a `.env` file with your API key:
 ```
-OPENAI_API_KEY=sua_chave_aqui
+OPENAI_API_KEY=your_key_here
 ```
 
-## 📈 Parâmetros Configuráveis
+## 📈 Configurable Parameters
 
-Edite as constantes em `tsp.py`:
+Edit the constants in `tsp.py`:
 
 ```python
-POPULATION_SIZE = 100        # Tamanho da população por veículo
-MUTATION_PROBABILITY = 0.5   # Taxa de mutação
-NUM_VEHICLES = 4             # Número de veículos (1-5)
-NUM_CITIES = 48              # Número de cidades (8-48)
-MAX_DISTANCE = 900           # Distância máxima sem reabastecimento
-MAX_GENERATIONS = 100        # Número máximo de gerações
+POPULATION_SIZE = 100        # Population size per vehicle
+MUTATION_PROBABILITY = 0.5   # Mutation rate
+NUM_VEHICLES = 4             # Number of vehicles (1-5)
+NUM_CITIES = 48              # Number of cities (8-48)
+MAX_DISTANCE = 900           # Maximum distance without refueling
+MAX_GENERATIONS = 100        # Maximum number of generations
 ```
 
-## 🏗️ Arquitetura
+## 🏗️ Architecture
 
-### Classe City
+### City Class
 ```python
 @dataclass(frozen=True)
 class City:
@@ -146,40 +146,40 @@ class City:
     x: int
     y: int
 ```
-Representação imutável de cidades com hash automático para uso em sets e dicionários.
+Immutable representation of cities with automatic hashing for use in sets and dictionaries.
 
-### Fluxo Principal
-1. **Inicialização**: Carrega cidades do benchmark ATT48 e aplica clustering K-Means
-2. **Preparação**: Cria populações iniciais para cada veículo usando heurísticas
-3. **Evolução**: Para cada geração, aplica seleção, crossover e mutação
-4. **Elitismo**: Preserva os 5 melhores indivíduos de cada população
-5. **Visualização**: Atualiza interface em tempo real a 30 FPS
-6. **Restrições**: Aplica penalidades e ajustes conforme configurações ativas
+### Main Flow
+1. **Initialization**: Loads cities from ATT48 benchmark and applies K-Means clustering
+2. **Preparation**: Creates initial populations for each vehicle using heuristics
+3. **Evolution**: For each generation, applies selection, crossover, and mutation
+4. **Elitism**: Preserves the 5 best individuals from each population
+5. **Visualization**: Updates interface in real-time at 30 FPS
+6. **Constraints**: Applies penalties and adjustments according to active configurations
 
-## 🎓 Conceitos de Algoritmo Genético
+## 🎓 Genetic Algorithm Concepts
 
-- **Fitness**: Soma das distâncias da rota (menor é melhor)
-- **Seleção por Torneio**: Escolhe os melhores indivíduos de subgrupos aleatórios
-- **Order Crossover (OX)**: Preserva ordem relativa de cidades dos pais
-- **Mutação por Swap**: Troca aleatória de posições de duas cidades
-- **Elitismo**: Garante que as melhores soluções não sejam perdidas
+- **Fitness**: Sum of route distances (lower is better)
+- **Tournament Selection**: Chooses the best individuals from random subgroups
+- **Order Crossover (OX)**: Preserves relative order of cities from parents
+- **Swap Mutation**: Random exchange of positions between two cities
+- **Elitism**: Ensures that the best solutions are not lost
 
-## 🤝 Contribuições
+## 🤝 Contributions
 
-Contribuições são bem-vindas! Sinta-se à vontade para:
-- Reportar bugs
-- Sugerir melhorias
-- Adicionar novas funcionalidades
-- Melhorar a documentação
+Contributions are welcome! Feel free to:
+- Report bugs
+- Suggest improvements
+- Add new features
+- Improve documentation
 
-## 📄 Licença
+## 📄 License
 
-Este projeto está licenciado sob a [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
 
-## 👥 Autores
+## 👥 Authors
 
-Desenvolvido como projeto de otimização combinatória utilizando algoritmos genéticos e técnicas de clustering para resolução do TSP com múltiplos veículos.
+Developed as a combinatorial optimization project using genetic algorithms and clustering techniques for solving multi-vehicle TSP.
 
 ---
 
-**Nota**: Este é um projeto educacional que demonstra a aplicação de algoritmos genéticos em problemas de otimização de rotas com restrições operacionais realistas.
+**Note**: This is an educational project that demonstrates the application of genetic algorithms to route optimization problems with realistic operational constraints.
