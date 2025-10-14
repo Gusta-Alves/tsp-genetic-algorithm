@@ -23,13 +23,14 @@ def get_llmSolution(tsp_output):
     {tsp_output}
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-nano",  
-        messages=[
-            {"role": "system", "content": "Você é um formatador de resultados de otimização de rotas."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.1
-    )
+    # response = client.chat.completions.create(
+    #     model="gpt-4.1-nano",  
+    #     messages=[
+    #         {"role": "system", "content": "Você é um formatador de resultados de otimização de rotas."},
+    #         {"role": "user", "content": prompt}
+    #     ],
+    #     temperature=0.1
+    # )
 
-    return response.choices[0].message.content
+    # return response.choices[0].message.content
+    return "LLM integration is currently disabled."

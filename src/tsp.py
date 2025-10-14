@@ -33,7 +33,7 @@ from genetic_algorithm import (
     tournament_selection,
 )
 
-_isllmintegrationEnabled = False
+_isllmintegrationEnabled = True
 
 if _isllmintegrationEnabled:
     from llm_integration import get_llmSolution
